@@ -94,6 +94,8 @@ const DB = new D1DatabaseShim(localDatabasePath);
 DB.exec(fs.readFileSync(path.join(workerRoot, "schema.sql"), "utf8"));
 
 const openAiKey = process.env.OPENAI_API_KEY || "";
+const azureOpenAiKey = process.env.AZURE_OPENAI_API_KEY || "";
+const providerKey = openAiKey || azureOpenAiKey;
 const env = {
   DB,
   ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS || `http://${host}:${port},http://localhost:${port}`,
@@ -102,7 +104,9 @@ const env = {
   TOKEN_SECRET: process.env.TOKEN_SECRET || "local-development-token-secret",
   OPENAI_MODEL: process.env.OPENAI_MODEL || "gpt-5.1",
   OPENAI_API_KEY: openAiKey,
-  MOCK_OPENAI: process.env.MOCK_OPENAI || (openAiKey ? "false" : "true")
+  AZURE_OPENAI_API_KEY: azureOpenAiKey,
+  OPENAI_BASE_URL: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
+  MOCK_OPENAI: process.env.MOCK_OPENAI || (providerKey ? "false" : "true")
 };
 
 const mimeTypes = {

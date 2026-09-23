@@ -2,6 +2,7 @@
 # v1 endpoint from wrangler.toml, so AZURE_OPENAI_API_KEY is the expected name.
 AZURE_OPENAI_API_KEY=replace-with-a-dedicated-azure-openai-key
 # OPENAI_API_KEY=replace-with-a-dedicated-openai-project-key
+OPENAI_BASE_URL=https://qcri-sakina.services.ai.azure.com/openai/v1
 STUDY_ACCESS_CODE=replace-with-a-new-study-access-code
 TOKEN_SECRET=replace-with-a-long-random-value
 
