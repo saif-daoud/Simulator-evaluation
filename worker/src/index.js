@@ -255,15 +255,13 @@ async function serializeStudy(env, studyRecord) {
   };
 }
 
-async function generatePatientResponse(env, simulatorKey, profile, messages, state, participantCode, opening = false) {
+async function generatePatientResponse(env, simulatorKey, profile, messages, state, participantCode) {
   if (simulatorKey === "topas") {
-    const generated = await generateTopasResponse(env, profile.prompt_profile, messages, state, participantCode, opening);
+    const generated = await generateTopasResponse(env, profile.prompt_profile, messages, state, participantCode);
     generated.content = sanitizeText(generated.content, 4000);
     return generated;
   }
-  const latestTherapist = opening
-    ? "Hello. What would you like to focus on today?"
-    : [...messages].reverse().find(message => message.role === "therapist")?.content || "";
+  const latestTherapist = [...messages].reverse().find(message => message.role === "therapist")?.content || "";
   if (!latestTherapist) throw new Error("A therapist message is required");
   const generated = simulatorKey === "patient_act"
     ? await generatePatientActResponse(env, profile.prompt_profile.patient_act_case, latestTherapist, state, participantCode)
@@ -372,31 +370,10 @@ async function handleStartSession(request, env, participantCode, headers) {
         AND status IN ('active', 'rating') LIMIT 1`
   ).bind(session.study_id, session.id, ...SIMULATOR_KEYS).first();
   if (blocker) return responseJson({ error: "Complete the current session and rating first." }, 409, headers);
-  const profile = PROFILE_BY_ID.get(session.profile_id);
-  const state = JSON.parse(session.state_json || "{}");
-  const generated = await generatePatientResponse(env, session.simulator_key, profile, [], state, participantCode, true);
   const timestamp = now();
-  const patientFarewell = farewellPhrase(generated.content);
-  const nextState = patientFarewell
-    ? {
-        ...generated.state,
-        termination: {
-          reason: "patient_farewell",
-          speaker: "patient",
-          phrase: patientFarewell,
-          utterance: generated.content
-        }
-      }
-    : generated.state;
-  await env.DB.batch([
-    patientFarewell
-      ? env.DB.prepare("UPDATE simulator_sessions SET status = 'rating', state_json = ?, started_at = COALESCE(started_at, ?), ended_at = ? WHERE id = ? AND status = 'ready'")
-        .bind(JSON.stringify(nextState), timestamp, timestamp, session.id)
-      : env.DB.prepare("UPDATE simulator_sessions SET status = 'active', state_json = ?, started_at = COALESCE(started_at, ?) WHERE id = ? AND status = 'ready'")
-        .bind(JSON.stringify(nextState), timestamp, session.id),
-    env.DB.prepare("INSERT OR IGNORE INTO session_messages (session_id, role, content, client_message_id, created_at) VALUES (?, 'patient', ?, ?, ?)")
-      .bind(session.id, generated.content, `opening:${session.id}`, timestamp)
-  ]);
+  await env.DB.prepare("UPDATE simulator_sessions SET status = 'active', started_at = COALESCE(started_at, ?) WHERE id = ? AND status = 'ready'")
+    .bind(timestamp, session.id)
+    .run();
   const study = await studyOwner(env, session.study_id, participantCode);
   return responseJson({ study: await serializeStudy(env, study) }, 200, headers);
 }

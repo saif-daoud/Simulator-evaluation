@@ -108,7 +108,9 @@ assert.equal(JSON.stringify(study).includes("topas"), false);
 for (let index = 0; index < 3; index += 1) {
   const session = study.sessions[index];
   ({ study } = await call("/api/sessions/start", { session_id: session.id, client_request_id: `start-${index}` }, token));
-  assert.equal(study.sessions[index].messages[0].role, "patient");
+  assert.equal(study.sessions[index].status, "active");
+  assert.equal(study.sessions[index].messages.length, 0);
+  assert.equal(study.sessions[index].can_end, false);
   ({ study } = await call("/api/sessions/message", {
     session_id: session.id,
     content: index === 0
@@ -117,10 +119,10 @@ for (let index = 0; index < 3; index += 1) {
     client_message_id: `message-${index}`
   }, token));
   if (index === 0) {
-    assert.deepEqual(study.sessions[index].messages.map(message => message.role), ["patient", "therapist"]);
+    assert.deepEqual(study.sessions[index].messages.map(message => message.role), ["therapist"]);
     assert.equal(study.sessions[index].termination_reason, "therapist_farewell");
   } else {
-    assert.deepEqual(study.sessions[index].messages.map(message => message.role), ["patient", "therapist", "patient"]);
+    assert.deepEqual(study.sessions[index].messages.map(message => message.role), ["therapist", "patient"]);
     ({ study } = await call("/api/sessions/end", { session_id: session.id }, token));
     assert.equal(study.sessions[index].termination_reason, "expert_ended");
   }
@@ -142,6 +144,7 @@ assert.equal(Number(methods.count), 3);
 ({ study } = await call("/api/studies/start", { profile_id: "case-02" }, token));
 const cappedSession = study.sessions[0];
 ({ study } = await call("/api/sessions/start", { session_id: cappedSession.id, client_request_id: "start-capped" }, token));
+assert.equal(study.sessions[0].messages.length, 0);
 for (let turn = 1; turn <= 50; turn += 1) {
   ({ study } = await call("/api/sessions/message", {
     session_id: cappedSession.id,

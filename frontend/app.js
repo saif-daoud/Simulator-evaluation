@@ -298,6 +298,11 @@ function renderChat(session) {
     empty.innerHTML = `<div><div class="patient-avatar" aria-hidden="true"><span></span></div><h2>Begin the conversation</h2><p>Start when you are ready.</p><button class="primary-button" type="button">Start conversation</button></div>`;
     empty.querySelector("button").addEventListener("click", startSession);
     el.messages.appendChild(empty);
+  } else if (!session.messages.length && session.status === "active") {
+    const empty = document.createElement("div");
+    empty.className = "empty-chat";
+    empty.innerHTML = `<div><div class="patient-avatar" aria-hidden="true"><span></span></div><h2>You begin this session</h2><p>Send the first message as the therapist.</p></div>`;
+    el.messages.appendChild(empty);
   } else {
     for (const message of session.messages) appendMessage(el.messages, message);
     requestAnimationFrame(() => { el.messages.scrollTop = el.messages.scrollHeight; });
@@ -306,6 +311,9 @@ function renderChat(session) {
   el.turnCounter.textContent = `${therapistTurns} therapist turn${therapistTurns === 1 ? "" : "s"}`;
   el.endSession.disabled = state.pending || !session.can_end;
   el.messageInput.disabled = state.pending || !session.can_send;
+  el.messageInput.placeholder = !session.messages.length && session.status === "active"
+    ? "Begin as the therapist…"
+    : "Respond as the therapist…";
   el.send.disabled = el.messageInput.disabled || !el.messageInput.value.trim();
   el.typing.classList.toggle("hidden", !state.pending);
   el.chatState.className = `chat-state${state.pending ? " busy" : ""}`;

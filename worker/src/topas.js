@@ -12,8 +12,6 @@ const COMMON_FIELDS = {
   interaction_unit: "session"
 };
 
-const OPENING_THERAPIST_MESSAGE = "Hello. What would you like to focus on today?";
-
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -195,18 +193,15 @@ function transcript(messages) {
   return messages.map(message => `${message.role === "therapist" ? "Therapist" : "Patient"}: ${message.content}`).join("\n");
 }
 
-export async function generateTopasResponse(env, promptProfile, messages, state, participantCode, opening = false) {
+export async function generateTopasResponse(env, promptProfile, messages, state, participantCode) {
   const profile = buildTopasProfile(promptProfile);
   const prior = state.topas || {};
   const currentState = validateTopasState(prior.dynamic_state || initialTopasState(profile), profile);
   const publicHistory = array(messages).map(message => ({ role: message.role, content: String(message.content || "") }));
-  const fullHistory = opening && publicHistory.length === 0
-    ? [{ role: "therapist", content: OPENING_THERAPIST_MESSAGE }]
-    : [{ role: "therapist", content: OPENING_THERAPIST_MESSAGE }, ...publicHistory];
+  if (!publicHistory.some(message => message.role === "therapist")) throw new Error("A therapist message is required");
+  const fullHistory = publicHistory;
   const checkpoint = Math.max(0, Math.min(Number(prior.checkpoint_message_count || 0), publicHistory.length));
-  const newMessages = opening && publicHistory.length === 0
-    ? fullHistory
-    : publicHistory.slice(checkpoint);
+  const newMessages = publicHistory.slice(checkpoint);
   const common = {
     ...COMMON_FIELDS,
     profile: JSON.stringify(profile),

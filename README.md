@@ -79,6 +79,7 @@ Use a restricted, expiring OpenAI project key and set project spend limits. Do n
 - The same case is used for all three simulator sessions, enabling within-case comparison.
 - Simulator order is randomized server-side and only anonymous labels reach the browser.
 - Only one session can be active at a time.
+- The expert starts every conversation by sending the first message as the therapist.
 - A session moves to evaluation after 50 therapist-patient turns, when the expert ends it, or when either speaker gives a direct bye/goodbye farewell.
 - The expert proceeds to the next session only after all five ratings are submitted.
 - Scores use a 1–5 anchored scale; comments are optional.

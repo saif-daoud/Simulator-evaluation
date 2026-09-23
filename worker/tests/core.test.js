@@ -91,19 +91,21 @@ test("TOPAS profile adapter populates the complete extracted CBT schema", () => 
 test("TOPAS runs state update then utterance generation and advances its checkpoint", async () => {
   const env = { MOCK_OPENAI: "true" };
   const promptProfile = PROFILES[0].prompt_profile;
-  const opening = await generateTopasResponse(env, promptProfile, [], { turn: 0 }, "TEST", true);
-  assert.ok(opening.content.length > 20);
-  assert.equal(opening.state.turn, 1);
-  assert.equal(opening.state.topas.checkpoint_message_count, 0);
-  assert.equal(Object.keys(opening.state.topas.dynamic_state.dynamic_states).length, 14);
+  const firstHistory = [{ role: "therapist", content: "What would you like to focus on today?" }];
+  const first = await generateTopasResponse(env, promptProfile, firstHistory, { turn: 0 }, "TEST");
+  assert.ok(first.content.length > 20);
+  assert.equal(first.state.turn, 1);
+  assert.equal(first.state.topas.checkpoint_message_count, 1);
+  assert.equal(Object.keys(first.state.topas.dynamic_state.dynamic_states).length, 14);
 
   const history = [
-    { role: "patient", content: opening.content },
+    ...firstHistory,
+    { role: "patient", content: first.content },
     { role: "therapist", content: "What feels most difficult about changing that pattern?" }
   ];
-  const next = await generateTopasResponse(env, promptProfile, history, opening.state, "TEST", false);
+  const next = await generateTopasResponse(env, promptProfile, history, first.state, "TEST");
   assert.ok(next.content.length > 20);
-  assert.notEqual(next.content, opening.content);
+  assert.notEqual(next.content, first.content);
   assert.equal(next.state.turn, 2);
   assert.equal(next.state.topas.checkpoint_message_count, history.length);
 });
@@ -234,7 +236,13 @@ test("live TOPAS executes its two GPT-5.1 stages with full prompt artifacts", as
   };
   try {
     const env = { MOCK_OPENAI: "false", OPENAI_API_KEY: "test-key", OPENAI_MODEL: "gpt-5.1" };
-    const result = await generateTopasResponse(env, promptProfile, [], { turn: 0 }, "TEST", true);
+    const result = await generateTopasResponse(
+      env,
+      promptProfile,
+      [{ role: "therapist", content: "What would you like to focus on today?" }],
+      { turn: 0 },
+      "TEST"
+    );
     assert.equal(requests.length, 2);
     assert.equal(requests[0].text.format.name, "topas_state_update");
     assert.equal(requests[1].text.format, undefined);
