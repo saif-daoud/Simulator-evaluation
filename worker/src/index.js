@@ -235,6 +235,24 @@ async function serializeStudy(env, studyRecord) {
   ).bind(studyRecord.id, ...SIMULATOR_KEYS).all();
   const sessions = [];
   for (const [index, session] of (result.results || []).entries()) {
+    if (session.status === "active") {
+      const legacyOpening = await env.DB.prepare(
+        "SELECT id FROM session_messages WHERE session_id = ? AND client_message_id = ? LIMIT 1"
+      ).bind(session.id, `opening:${session.id}`).first();
+      const therapistMessage = await env.DB.prepare(
+        "SELECT id FROM session_messages WHERE session_id = ? AND role = 'therapist' LIMIT 1"
+      ).bind(session.id).first();
+      if (legacyOpening && !therapistMessage) {
+        const resetState = JSON.stringify({ turn: 0, trust: 2.5 });
+        await env.DB.batch([
+          env.DB.prepare("DELETE FROM session_messages WHERE session_id = ? AND client_message_id = ?")
+            .bind(session.id, `opening:${session.id}`),
+          env.DB.prepare("UPDATE simulator_sessions SET state_json = ? WHERE id = ?")
+            .bind(resetState, session.id)
+        ]);
+        session.state_json = resetState;
+      }
+    }
     const messagesResult = await env.DB.prepare(
       "SELECT id, role, content, created_at FROM session_messages WHERE session_id = ? ORDER BY id"
     ).bind(session.id).all();

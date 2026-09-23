@@ -111,6 +111,15 @@ for (let index = 0; index < 3; index += 1) {
   assert.equal(study.sessions[index].status, "active");
   assert.equal(study.sessions[index].messages.length, 0);
   assert.equal(study.sessions[index].can_end, false);
+  if (index === 0) {
+    await DB.prepare(
+      "INSERT INTO session_messages (session_id, role, content, client_message_id, created_at) VALUES (?, 'patient', ?, ?, ?)"
+    ).bind(session.id, "Legacy generated opener", `opening:${session.id}`, new Date().toISOString()).run();
+    await DB.prepare("UPDATE simulator_sessions SET state_json = ? WHERE id = ?")
+      .bind(JSON.stringify({ turn: 1, legacy: true }), session.id).run();
+    ({ study } = await call("/api/study", { study_id: study.id }, token));
+    assert.equal(study.sessions[index].messages.length, 0);
+  }
   ({ study } = await call("/api/sessions/message", {
     session_id: session.id,
     content: index === 0
