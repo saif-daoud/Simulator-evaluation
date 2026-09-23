@@ -34,7 +34,7 @@ npm install
 npm run dev:local
 ```
 
-Open `http://127.0.0.1:8787` and use either `EXPERT-01` / `LOCAL-EXPERT-01` or `EXPERT-02` / `LOCAL-EXPERT-02`. Without an OpenAI or Azure OpenAI provider key, this command automatically uses mock patient responses and labels that mode in the header. To exercise the integrated simulators, copy `.dev.vars.example` to `.dev.vars`, configure a dedicated key and matching base URL, and keep `MOCK_OPENAI=false`.
+Open `http://127.0.0.1:8787` and use either `EXPERT-0001` / `LOCAL-EXPERT-0001` or `EXPERT-0002` / `LOCAL-EXPERT-0002`. Without an OpenAI or Azure OpenAI provider key, this command automatically uses mock patient responses and labels that mode in the header. To exercise the integrated simulators, copy `.dev.vars.example` to `.dev.vars`, configure a dedicated key and matching base URL, and keep `MOCK_OPENAI=false`.
 
 To use the Cloudflare runtime locally instead:
 
