@@ -7,13 +7,24 @@ const projectRoot = path.resolve(here, "..");
 const sourcePath = path.resolve(projectRoot, "source-data/patient_profiles.json");
 const outputPath = path.resolve(projectRoot, "worker/src/profiles.js");
 
-const selectedIds = [
+const existingIds = [
   "patient_act_001", "patient_act_002", "patient_act_003", "patient_act_021", "patient_act_022",
   "patient_act_004", "patient_act_007", "patient_act_016", "patient_act_023", "patient_act_026"
 ];
 
 const raw = JSON.parse(fs.readFileSync(sourcePath, "utf8"));
 const byId = new Map(raw.map(item => [item.profile_id, item]));
+const selectedIds = [
+  ...existingIds,
+  ...raw
+    .map(item => item.profile_id)
+    .filter(id => !existingIds.includes(id))
+    .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }))
+];
+
+if (selectedIds.length !== 40 || new Set(selectedIds).size !== 40) {
+  throw new Error(`Expected 40 unique patient profiles, found ${selectedIds.length}`);
+}
 
 function clean(value) {
   return String(value ?? "").replace(/\r\n/g, "\n").trim();

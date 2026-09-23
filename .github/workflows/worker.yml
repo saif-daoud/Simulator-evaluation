@@ -37,10 +37,10 @@ jobs:
       - name: Upload runtime secrets
         env:
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
-          STUDY_ACCESS_CODE: ${{ secrets.STUDY_ACCESS_CODE }}
+          EXPERT_ACCESS_CODES: ${{ secrets.EXPERT_ACCESS_CODES }}
           TOKEN_SECRET: ${{ secrets.TOKEN_SECRET }}
         run: |
           printf '%s' "$AZURE_OPENAI_API_KEY" | npx wrangler secret put AZURE_OPENAI_API_KEY
-          printf '%s' "$STUDY_ACCESS_CODE" | npx wrangler secret put STUDY_ACCESS_CODE
+          printf '%s' "$EXPERT_ACCESS_CODES" | npx wrangler secret put EXPERT_ACCESS_CODES
           printf '%s' "$TOKEN_SECRET" | npx wrangler secret put TOKEN_SECRET
       - run: npm run deploy

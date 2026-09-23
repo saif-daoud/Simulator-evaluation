@@ -67,16 +67,20 @@ DB.exec(fs.readFileSync(path.join(workerRoot, "schema.sql"), "utf8"));
 const env = {
   DB,
   ALLOWED_ORIGINS: "http://127.0.0.1:5500",
-  PARTICIPANT_CODES: "EXPERT-DEMO",
+  PARTICIPANT_CODES: "EXPERT-01,EXPERT-02",
+  PROFILE_ASSIGNMENTS: "EXPERT-01:1-20,EXPERT-02:21-40",
+  EXPERT_ACCESS_CODES: JSON.stringify({
+    "EXPERT-01": "LOCAL-EXPERT-01",
+    "EXPERT-02": "LOCAL-EXPERT-02"
+  }),
   OPENAI_MODEL: "gpt-5.1",
   OPENAI_API_KEY: "unused-in-mock-mode",
   MOCK_OPENAI: "true",
-  STUDY_ACCESS_CODE: "LOCAL-STUDY",
   TOKEN_SECRET: "integration-test-secret"
 };
 const origin = "http://127.0.0.1:5500";
 
-async function call(pathname, body, token = "") {
+async function requestApi(pathname, body, token = "") {
   const request = new Request(`http://local.test${pathname}`, {
     method: "POST",
     headers: {
@@ -88,15 +92,34 @@ async function call(pathname, body, token = "") {
   });
   const response = await worker.fetch(request, env);
   const payload = await response.json();
+  return { response, payload };
+}
+
+async function call(pathname, body, token = "") {
+  const { response, payload } = await requestApi(pathname, body, token);
   assert.ok(response.ok, `${pathname} failed (${response.status}): ${JSON.stringify(payload)}`);
   return payload;
 }
 
-const login = await call("/api/auth/login", { participant_code: "EXPERT-DEMO", access_code: "LOCAL-STUDY" });
+const login = await call("/api/auth/login", { participant_code: "EXPERT-01", access_code: "LOCAL-EXPERT-01" });
 const token = login.token;
 const bootstrap = await call("/api/bootstrap", {}, token);
-assert.equal(bootstrap.profiles.length, 10);
+assert.equal(bootstrap.profiles.length, 20);
+assert.deepEqual(bootstrap.profiles.map(profile => profile.id), Array.from({ length: 20 }, (_, index) => `case-${String(index + 1).padStart(2, "0")}`));
 assert.equal(JSON.stringify(bootstrap).includes("simulator_key"), false);
+
+const secondLogin = await call("/api/auth/login", { participant_code: "EXPERT-02", access_code: "LOCAL-EXPERT-02" });
+const secondBootstrap = await call("/api/bootstrap", {}, secondLogin.token);
+assert.equal(secondBootstrap.profiles.length, 20);
+assert.deepEqual(secondBootstrap.profiles.map(profile => profile.id), Array.from({ length: 20 }, (_, index) => `case-${String(index + 21).padStart(2, "0")}`));
+assert.equal(bootstrap.profiles.some(profile => secondBootstrap.profiles.some(other => other.id === profile.id)), false);
+
+const crossedCode = await requestApi("/api/auth/login", { participant_code: "EXPERT-01", access_code: "LOCAL-EXPERT-02" });
+assert.equal(crossedCode.response.status, 403);
+const crossedCase = await requestApi("/api/studies/start", { profile_id: "case-21" }, token);
+assert.equal(crossedCase.response.status, 403);
+const ownCase = await call("/api/studies/start", { profile_id: "case-21" }, secondLogin.token);
+assert.equal(ownCase.study.profile.id, "case-21");
 
 let { study } = await call("/api/studies/start", { profile_id: "case-01" }, token);
 assert.equal(study.sessions.length, 3);

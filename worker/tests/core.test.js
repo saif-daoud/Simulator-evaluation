@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  assignedProfiles,
   farewellPhrase,
   MAX_THERAPIST_TURNS,
   SIMULATOR_KEYS,
@@ -24,6 +25,18 @@ import {
 test("the three requested simulators are configured", () => {
   assert.deepEqual(SIMULATOR_KEYS, ["patient_psi", "patient_act", "topas"]);
   assert.equal(MAX_THERAPIST_TURNS, 50);
+});
+
+test("the two experts receive distinct sets of 20 profiles", () => {
+  const env = { PROFILE_ASSIGNMENTS: "EXPERT-01:1-20,EXPERT-02:21-40" };
+  const first = assignedProfiles(env, "expert-01");
+  const second = assignedProfiles(env, "EXPERT-02");
+  assert.equal(PROFILES.length, 40);
+  assert.equal(first.length, 20);
+  assert.equal(second.length, 20);
+  assert.equal(first.some(profile => second.some(other => other.id === profile.id)), false);
+  assert.deepEqual(first.map(profile => profile.display_number), Array.from({ length: 20 }, (_, index) => index + 1));
+  assert.deepEqual(second.map(profile => profile.display_number), Array.from({ length: 20 }, (_, index) => index + 21));
 });
 
 test("farewell detection matches the simulation pipeline", () => {
@@ -131,6 +144,27 @@ test("standalone live simulators preserve their full distinct mechanisms", async
   assert.match(patientPsiSystemPrompt(psi.state.patient_psi_model), /Cognitive Conceptualization Diagram/);
   assert.equal(psi.state.patient_psi_history.length, 2);
   assert.ok(psi.content.length > 20);
+});
+
+test("all 40 patient profiles run through PatientAct, Patient-Ψ, and TOPAS", async () => {
+  const env = { MOCK_OPENAI: "true" };
+  for (const profile of PROFILES) {
+    const promptProfile = profile.prompt_profile;
+    const therapistMessage = "What feels most important for us to discuss today?";
+    const act = await generatePatientActResponse(
+      env, promptProfile.patient_act_case, therapistMessage, { turn: 0 }, "PROFILE-CHECK"
+    );
+    const psi = await generatePatientPsiResponse(
+      env, promptProfile, therapistMessage, { turn: 0 }, "PROFILE-CHECK"
+    );
+    const topas = await generateTopasResponse(
+      env, promptProfile, [{ role: "therapist", content: therapistMessage }], { turn: 0 }, "PROFILE-CHECK"
+    );
+    assert.ok(act.content.length > 20, `${profile.id} PatientAct response`);
+    assert.ok(psi.content.length > 20, `${profile.id} Patient-Ψ response`);
+    assert.ok(topas.content.length > 20, `${profile.id} TOPAS response`);
+    assert.equal(Object.keys(topas.state.topas.dynamic_state.dynamic_states).length, 14, `${profile.id} TOPAS state`);
+  }
 });
 
 test("live OpenAI calls use GPT-5.1 Responses structured outputs", async () => {

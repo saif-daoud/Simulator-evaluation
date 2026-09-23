@@ -184,12 +184,49 @@ async function parseBody(request) {
   return request.json().catch(() => ({}));
 }
 
-function participantAllowed(env, participantCode) {
-  const allowed = String(env.PARTICIPANT_CODES || "")
+function participantCodes(env) {
+  return String(env.PARTICIPANT_CODES || "")
     .split(",")
     .map(value => value.trim().toUpperCase())
     .filter(Boolean);
-  return allowed.includes(participantCode.toUpperCase());
+}
+
+function participantAllowed(env, participantCode) {
+  return participantCodes(env).includes(participantCode.toUpperCase());
+}
+
+function accessCodeForParticipant(env, participantCode) {
+  const configured = String(env.EXPERT_ACCESS_CODES || "").trim();
+  if (configured) {
+    try {
+      const codes = JSON.parse(configured);
+      return String(codes?.[participantCode.toUpperCase()] || "");
+    } catch {
+      return "";
+    }
+  }
+  return String(env.STUDY_ACCESS_CODE || "");
+}
+
+export function assignedProfiles(env, participantCode) {
+  const configured = String(env.PROFILE_ASSIGNMENTS || "").trim();
+  if (!configured) return [...PROFILES];
+  const normalizedParticipant = participantCode.toUpperCase();
+  const assignment = configured
+    .split(",")
+    .map(value => value.trim())
+    .filter(Boolean)
+    .map(value => value.match(/^([^:]+):(\d+)-(\d+)$/))
+    .find(match => match?.[1].trim().toUpperCase() === normalizedParticipant);
+  if (!assignment) return [];
+  const start = Number(assignment[2]);
+  const end = Number(assignment[3]);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start) return [];
+  return PROFILES.filter(profile => profile.display_number >= start && profile.display_number <= end);
+}
+
+function profileAssigned(env, participantCode, profileId) {
+  return assignedProfiles(env, participantCode).some(profile => profile.id === profileId);
 }
 
 async function studyOwner(env, studyId, participantCode) {
@@ -205,7 +242,11 @@ async function sessionOwner(env, sessionId, participantCode) {
        JOIN studies s ON s.id = ss.study_id
       WHERE ss.id = ? AND s.participant_code = ?`
   ).bind(sessionId, participantCode).first();
-  return session && SIMULATOR_KEYS.includes(session.simulator_key) ? session : null;
+  return session
+    && SIMULATOR_KEYS.includes(session.simulator_key)
+    && profileAssigned(env, participantCode, session.profile_id)
+    ? session
+    : null;
 }
 
 async function serializeStudy(env, studyRecord) {
@@ -304,7 +345,8 @@ async function handleLogin(request, env, headers) {
   const participantCode = sanitizeText(body.participant_code, 64).toUpperCase();
   const accessCode = String(body.access_code || "");
   if (!participantCode || !accessCode) return responseJson({ error: "Enter both study codes." }, 400, headers);
-  if (!participantAllowed(env, participantCode) || !env.STUDY_ACCESS_CODE || !(await secureEqual(accessCode, env.STUDY_ACCESS_CODE))) {
+  const expectedAccessCode = accessCodeForParticipant(env, participantCode);
+  if (!participantAllowed(env, participantCode) || !expectedAccessCode || !(await secureEqual(accessCode, expectedAccessCode))) {
     return responseJson({ error: "The participant or access code is not valid." }, 403, headers);
   }
   const timestamp = now();
@@ -325,9 +367,13 @@ async function handleBootstrap(env, participantCode, headers) {
       GROUP BY s.id, s.profile_id, s.status
       ORDER BY s.created_at`
   ).bind(participantCode).all();
+  const profiles = assignedProfiles(env, participantCode);
+  const assignedIds = new Set(profiles.map(profile => profile.id));
   return responseJson({
-    profiles: PROFILES.map(publicProfile),
-    studies: (result.results || []).map(row => ({ ...row, completed_sessions: Number(row.completed_sessions || 0) }))
+    profiles: profiles.map(publicProfile),
+    studies: (result.results || [])
+      .filter(row => assignedIds.has(row.profile_id))
+      .map(row => ({ ...row, completed_sessions: Number(row.completed_sessions || 0) }))
   }, 200, headers);
 }
 
@@ -335,6 +381,7 @@ async function handleStartStudy(request, env, participantCode, headers) {
   const body = await parseBody(request);
   const profileId = sanitizeText(body.profile_id, 32);
   if (!PROFILE_BY_ID.has(profileId)) return responseJson({ error: "Unknown case." }, 404, headers);
+  if (!profileAssigned(env, participantCode, profileId)) return responseJson({ error: "This case is not assigned to this expert." }, 403, headers);
   const existing = await env.DB.prepare("SELECT * FROM studies WHERE participant_code = ? AND profile_id = ?")
     .bind(participantCode, profileId)
     .first();
@@ -370,6 +417,7 @@ async function handleGetStudy(request, env, participantCode, headers) {
   const body = await parseBody(request);
   const study = await studyOwner(env, sanitizeText(body.study_id, 64), participantCode);
   if (!study) return responseJson({ error: "Study not found." }, 404, headers);
+  if (!profileAssigned(env, participantCode, study.profile_id)) return responseJson({ error: "Study not found." }, 404, headers);
   return responseJson({ study: await serializeStudy(env, study) }, 200, headers);
 }
 
@@ -561,6 +609,9 @@ async function router(request, env) {
   try {
     participantCode = await authenticatedParticipant(request, env);
   } catch {
+    return responseJson({ error: "Your study session is not valid." }, 401, headers);
+  }
+  if (!participantAllowed(env, participantCode)) {
     return responseJson({ error: "Your study session is not valid." }, 401, headers);
   }
   if (path === "/api/bootstrap") return handleBootstrap(env, participantCode, headers);

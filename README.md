@@ -34,7 +34,7 @@ npm install
 npm run dev:local
 ```
 
-Open `http://127.0.0.1:8787` and use `EXPERT-DEMO` / `LOCAL-STUDY`. Without an OpenAI or Azure OpenAI provider key, this command automatically uses mock patient responses and labels that mode in the header. To exercise the integrated simulators, copy `.dev.vars.example` to `.dev.vars`, configure a dedicated key and matching base URL, and keep `MOCK_OPENAI=false`.
+Open `http://127.0.0.1:8787` and use either `EXPERT-01` / `LOCAL-EXPERT-01` or `EXPERT-02` / `LOCAL-EXPERT-02`. Without an OpenAI or Azure OpenAI provider key, this command automatically uses mock patient responses and labels that mode in the header. To exercise the integrated simulators, copy `.dev.vars.example` to `.dev.vars`, configure a dedicated key and matching base URL, and keep `MOCK_OPENAI=false`.
 
 To use the Cloudflare runtime locally instead:
 
@@ -65,18 +65,19 @@ The checked-in `frontend/config.js` points local hosts at `http://127.0.0.1:8787
 
 ## Production setup
 
-1. Set `AZURE_OPENAI_API_KEY`, `STUDY_ACCESS_CODE`, and `TOKEN_SECRET` with `wrangler secret put`.
-2. Set `PARTICIPANT_CODES`, `ALLOWED_ORIGINS`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` in `wrangler.toml`.
+1. Set `AZURE_OPENAI_API_KEY`, `EXPERT_ACCESS_CODES`, and `TOKEN_SECRET` with `wrangler secret put`. `EXPERT_ACCESS_CODES` is a JSON object whose keys are participant codes and whose values are their distinct access codes.
+2. Set `PARTICIPANT_CODES`, `PROFILE_ASSIGNMENTS`, `ALLOWED_ORIGINS`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` in `wrangler.toml`.
 3. Deploy with `npm run deploy` from `worker/`. The isolated SQLite-backed Durable Object is created by the `v1` migration and initializes its own schema.
 4. Put the deployed Worker URL in `frontend/config.js`, then publish `frontend/`.
 
-The included GitHub Actions workflows test and deploy the Worker and publish `frontend/` to GitHub Pages when `main` is pushed. They use encrypted repository secrets for Cloudflare, Azure OpenAI, the study access code, and token signing.
+The included GitHub Actions workflows test and deploy the Worker and publish `frontend/` to GitHub Pages when `main` is pushed. They use encrypted repository secrets for Cloudflare, Azure OpenAI, the per-expert access-code map, and token signing.
 
 Use a restricted, expiring OpenAI project key and set project spend limits. Do not copy credentials from the existing live-interaction study.
 
 ## Study behavior
 
 - The same case is used for all three simulator sessions, enabling within-case comparison.
+- Expert 1 receives cases 1–20 and Expert 2 receives cases 21–40; API authorization prevents either expert from opening the other's cases.
 - Simulator order is randomized server-side and only anonymous labels reach the browser.
 - Only one session can be active at a time.
 - The expert starts every conversation by sending the first message as the therapist.
