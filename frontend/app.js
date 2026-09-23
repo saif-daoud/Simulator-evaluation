@@ -46,7 +46,7 @@ const state = {
 const $ = id => document.getElementById(id);
 const el = {
   views: [...document.querySelectorAll(".view")],
-  home: $("home-link"), connection: $("connection-status"), participantChip: $("participant-chip"), signOut: $("sign-out-button"),
+  home: $("home-link"), signOut: $("sign-out-button"),
   loginForm: $("login-form"), participant: $("participant-code"), access: $("access-code"), loginButton: $("login-button"), loginError: $("login-error"),
   profileGrid: $("profile-grid"), caseBack: $("case-back-button"), caseTitle: $("case-title"), caseCondition: $("case-condition"), caseCode: $("case-code"), caseSummary: $("case-summary"), caseContext: $("case-context"), caseHistory: $("case-history"), caseCoping: $("case-coping"), caseProgressCopy: $("case-progress-copy"), caseProgressBar: $("case-progress-bar"), sessionList: $("session-list"),
   sessionBack: $("session-back-button"), sessionPosition: $("session-position"), sessionTitle: $("session-title"), viewProfile: $("view-profile-button"), endSession: $("end-session-button"), turnCounter: $("turn-counter"), chatPatientLabel: $("chat-patient-label"), chatState: $("chat-state"), messages: $("messages"), typing: $("typing-row"), messageForm: $("message-form"), messageInput: $("message-input"), send: $("send-button"),
@@ -59,8 +59,6 @@ function showView(name) {
   for (const view of el.views) view.classList.toggle("hidden", view.id !== `${name}-view`);
   const authenticated = Boolean(state.token);
   el.signOut.classList.toggle("hidden", !authenticated);
-  el.participantChip.classList.toggle("hidden", !authenticated);
-  if (authenticated) el.participantChip.textContent = state.participant;
   window.scrollTo({ top: 0, behavior: "instant" });
 }
 
@@ -92,14 +90,9 @@ async function checkHealth() {
   try {
     const response = await fetch(apiUrl("/api/health"));
     if (!response.ok) throw new Error();
-    const health = await response.json();
-    el.connection.className = "connection-status online";
-    el.connection.lastElementChild.textContent = health.response_mode === "mock"
-      ? "Study API online · mock mode"
-      : `${health.model || "GPT-5.1"} simulators online`;
+    return true;
   } catch {
-    el.connection.className = "connection-status offline";
-    el.connection.lastElementChild.textContent = "Study API unavailable";
+    return false;
   }
 }
 

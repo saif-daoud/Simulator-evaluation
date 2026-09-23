@@ -66,15 +66,6 @@ a { color: inherit; }
 .brand strong { font-family: var(--serif); font-size: 19px; letter-spacing: .01em; }
 .brand small { margin-top: -1px; color: var(--muted); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
 .header-actions { display: flex; align-items: center; gap: 15px; }
-.connection-status, .participant-chip {
-  min-height: 34px; padding: 0 12px; display: inline-flex; align-items: center; gap: 8px;
-  border: 1px solid var(--line); border-radius: 999px; background: rgba(255, 253, 248, .8);
-  color: var(--muted); font-size: 12px; font-weight: 600;
-}
-.connection-status i { width: 7px; height: 7px; border-radius: 50%; background: #ba842f; }
-.connection-status.online i { background: #3a9b72; box-shadow: 0 0 0 4px rgba(58, 155, 114, .1); }
-.connection-status.offline i { background: var(--danger); }
-.participant-chip { color: var(--teal); background: var(--teal-soft); }
 .text-button, .back-button { padding: 7px 0; border: 0; background: transparent; color: var(--teal); font-weight: 700; }
 .text-button:hover, .back-button:hover { color: var(--teal-dark); }
 
@@ -309,8 +300,7 @@ input:focus, textarea:focus { border-color: var(--teal-mid); box-shadow: 0 0 0 3
 
 @media (max-width: 720px) {
   .site-header { height: 68px; padding: 0 14px; }
-  .brand small, .connection-status span, .participant-chip { display: none !important; }
-  .connection-status { min-height: 30px; padding: 0 10px; }
+  .brand small { display: none !important; }
   .view, .case-view, .session-view, .rating-view { width: min(100% - 24px, 620px); padding-top: 29px; }
   .login-view { min-height: calc(100vh - 68px); }
   .login-card { padding: 38px 23px 30px; }
