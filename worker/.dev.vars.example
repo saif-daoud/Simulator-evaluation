@@ -1,0 +1,9 @@
+# Configure one provider key. This deployment uses the Azure OpenAI-compatible
+# v1 endpoint from wrangler.toml, so AZURE_OPENAI_API_KEY is the expected name.
+AZURE_OPENAI_API_KEY=replace-with-a-dedicated-azure-openai-key
+# OPENAI_API_KEY=replace-with-a-dedicated-openai-project-key
+STUDY_ACCESS_CODE=replace-with-a-new-study-access-code
+TOKEN_SECRET=replace-with-a-long-random-value
+
+# Set true only for local UI testing without OpenAI API calls.
+MOCK_OPENAI=false

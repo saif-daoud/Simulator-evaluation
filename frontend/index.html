@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#143f3c" />
+    <meta name="description" content="Blinded expert evaluation of simulated CBT patients." />
+    <title>Patient Simulator Evaluation</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" id="home-link" href="#" aria-label="Evaluation home">
+        <span class="brand-mark" aria-hidden="true">S</span>
+        <span><strong>Simulator Review</strong><small>CBT expert evaluation</small></span>
+      </a>
+      <div class="header-actions">
+        <span class="connection-status" id="connection-status"><i></i><span>Checking study API</span></span>
+        <span class="participant-chip hidden" id="participant-chip"></span>
+        <button class="text-button hidden" id="sign-out-button" type="button">Sign out</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="view login-view" id="login-view">
+        <article class="login-card">
+          <div class="login-symbol" aria-hidden="true"><span></span><span></span><span></span></div>
+          <p class="eyebrow">Expert study</p>
+          <h1>Evaluate simulated patients</h1>
+          <p class="intro">Conduct a short CBT interaction as the therapist, then rate how convincingly the simulated patient behaved.</p>
+          <form id="login-form">
+            <label>Participant code<input id="participant-code" autocomplete="username" maxlength="64" placeholder="e.g. EXPERT-0001" required /></label>
+            <label>Study access code<input id="access-code" type="password" autocomplete="current-password" required /></label>
+            <p class="error hidden" id="login-error" role="alert"></p>
+            <button class="primary-button" id="login-button" type="submit">Enter the study <span aria-hidden="true">→</span></button>
+          </form>
+        </article>
+      </section>
+
+      <section class="view dashboard-view hidden" id="dashboard-view">
+        <div class="hero-row">
+          <div>
+            <p class="eyebrow">Patient simulator study</p>
+            <h1>Select a case</h1>
+            <p class="hero-copy">Each case contains three simulator sessions. You will see one at a time and rate it before proceeding to the next session.</p>
+          </div>
+          <div class="study-key" aria-label="Study steps">
+            <span><b>1</b> Read case</span><i></i><span><b>2</b> Conduct session</span><i></i><span><b>3</b> Rate patient</span>
+          </div>
+        </div>
+
+        <aside class="role-banner">
+          <div class="role-icon" aria-hidden="true">Rx</div>
+          <div><strong>You are the therapist.</strong><p>Respond as you would in a CBT session and end when you have enough evidence to score the simulator.</p></div>
+        </aside>
+
+        <div class="profile-grid" id="profile-grid" aria-live="polite"></div>
+      </section>
+
+      <section class="view case-view hidden" id="case-view">
+        <button class="back-button" id="case-back-button" type="button">← All cases</button>
+        <div class="case-heading">
+          <div><p class="eyebrow">Clinical case brief</p><h1 id="case-title">Patient profile</h1><p id="case-condition"></p></div>
+          <div class="case-progress"><span id="case-progress-copy">0 of 3 completed</span><div><i id="case-progress-bar"></i></div></div>
+        </div>
+
+        <div class="case-layout">
+          <article class="case-file">
+            <div class="file-tab"><span>Simulated case</span><strong id="case-code">CASE 01</strong></div>
+            <section class="case-lead"><p class="section-kicker">Presenting concern</p><p id="case-summary"></p></section>
+            <div class="case-facts">
+              <section><p class="section-kicker">Current context</p><p class="pre-line" id="case-context"></p></section>
+              <section><p class="section-kicker">Relevant history</p><p class="pre-line" id="case-history"></p></section>
+              <section><p class="section-kicker">Typical coping</p><ul id="case-coping"></ul></section>
+              <section><p class="section-kicker">Evaluation lens</p><p>Look for profile coherence, paced disclosure, plausible resistance, emotional continuity, and overall realism.</p></section>
+            </div>
+          </article>
+
+          <aside class="session-rail">
+            <div class="rail-heading"><p class="eyebrow">Evaluation set</p><h2>Three patient sessions</h2></div>
+            <div id="session-list"></div>
+            <p class="rail-note"><span>i</span> Complete the rating after each interaction to unlock the next patient session.</p>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view session-view hidden" id="session-view">
+        <div class="session-topbar">
+          <div>
+            <button class="back-button" id="session-back-button" type="button">← Case overview</button>
+            <p class="eyebrow" id="session-position">Session 1 of 3</p>
+            <h1 id="session-title">Patient session A</h1>
+          </div>
+          <div class="session-actions">
+            <button class="secondary-button" id="view-profile-button" type="button">View case brief</button>
+            <button class="end-button" id="end-session-button" type="button">End &amp; evaluate</button>
+          </div>
+        </div>
+        <div class="session-notice"><span aria-hidden="true">●</span><p><strong>You are speaking as the therapist.</strong></p><em id="turn-counter">0 therapist turns</em></div>
+
+        <article class="chat-shell">
+          <header class="chat-header">
+            <div class="patient-avatar" aria-hidden="true"><span></span></div>
+            <div><strong id="chat-patient-label">Patient session A</strong><small>Simulated patient</small></div>
+            <span class="chat-state" id="chat-state"><i></i> Ready</span>
+          </header>
+          <div class="messages" id="messages" aria-live="polite"></div>
+          <div class="typing-row hidden" id="typing-row"><span></span><span></span><span></span><em>Patient is responding</em></div>
+          <form class="composer" id="message-form">
+            <textarea id="message-input" rows="1" maxlength="4000" placeholder="Respond as the therapist…" aria-label="Respond as the therapist" required></textarea>
+            <div class="composer-bottom"><small>Enter to send · Shift + Enter for a new line</small><button class="send-button" id="send-button" type="submit" aria-label="Send message">↑</button></div>
+          </form>
+        </article>
+      </section>
+
+      <section class="view rating-view hidden" id="rating-view">
+        <div class="rating-heading">
+          <div><p class="eyebrow" id="rating-position">Session 1 of 3 · evaluation</p><h1>Rate the simulated patient</h1><p>Score the patient behavior you observed, not your own therapeutic performance.</p></div>
+          <button class="secondary-button" id="rating-profile-button" type="button">View case brief</button>
+        </div>
+        <div class="rating-layout">
+          <aside class="transcript-card">
+            <header><div><p class="eyebrow">Reference</p><h2>Session transcript</h2></div><span id="transcript-count">0 turns</span></header>
+            <div class="rating-transcript" id="rating-transcript"></div>
+          </aside>
+          <form class="rating-form" id="rating-form">
+            <div class="rubric-head"><div><p class="eyebrow">PatientAct metrics</p><h2>Simulator quality</h2></div><span>1 = Poor · 5 = Excellent</span></div>
+            <div id="rating-items"></div>
+            <label class="comments-label"><span>Optional comments</span><textarea id="rating-comments" rows="4" maxlength="4000" placeholder="Note strengths, failures, role leakage, or anything that informed your scores."></textarea></label>
+            <p class="error hidden" id="rating-error" role="alert"></p>
+            <div class="rating-submit-row"><p>All five scores are required.</p><button class="primary-button" id="submit-rating-button" type="submit">Submit evaluation <span aria-hidden="true">→</span></button></div>
+          </form>
+        </div>
+      </section>
+
+      <section class="view complete-view hidden" id="complete-view">
+        <article class="complete-card">
+          <div class="complete-mark" aria-hidden="true">✓</div>
+          <p class="eyebrow">Case complete</p>
+          <h1>All three simulators rated</h1>
+          <p>Your transcripts and PatientAct scores have been saved.</p>
+          <button class="primary-button" id="complete-button" type="button">Return to cases</button>
+        </article>
+      </section>
+    </main>
+
+    <dialog class="profile-dialog" id="profile-dialog">
+      <header><div><p class="eyebrow">Clinical case brief</p><h2 id="dialog-title">Patient profile</h2><p id="dialog-condition"></p></div><button id="close-dialog-button" type="button" aria-label="Close case brief">×</button></header>
+      <div class="dialog-body">
+        <section><p class="section-kicker">Presenting concern</p><p id="dialog-summary"></p></section>
+        <section><p class="section-kicker">Current context</p><p class="pre-line" id="dialog-context"></p></section>
+        <section><p class="section-kicker">Relevant history</p><p class="pre-line" id="dialog-history"></p></section>
+        <section><p class="section-kicker">Typical coping</p><ul id="dialog-coping"></ul></section>
+      </div>
+    </dialog>
+
+    <div class="toast hidden" id="toast" role="status"></div>
+    <script src="./config.js"></script>
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>

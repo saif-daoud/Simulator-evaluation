@@ -1,0 +1,46 @@
+name: Deploy simulator evaluation API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "worker/**"
+      - ".github/workflows/worker.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: simulator-evaluation-api
+  cancel-in-progress: false
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run test:e2e
+      - name: Upload runtime secrets
+        env:
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          STUDY_ACCESS_CODE: ${{ secrets.STUDY_ACCESS_CODE }}
+          TOKEN_SECRET: ${{ secrets.TOKEN_SECRET }}
+        run: |
+          printf '%s' "$AZURE_OPENAI_API_KEY" | npx wrangler secret put AZURE_OPENAI_API_KEY
+          printf '%s' "$STUDY_ACCESS_CODE" | npx wrangler secret put STUDY_ACCESS_CODE
+          printf '%s' "$TOKEN_SECRET" | npx wrangler secret put TOKEN_SECRET
+      - run: npm run deploy
