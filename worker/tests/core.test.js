@@ -28,9 +28,9 @@ test("the three requested simulators are configured", () => {
 });
 
 test("the two experts receive distinct sets of 20 profiles", () => {
-  const env = { PROFILE_ASSIGNMENTS: "EXPERT-0001:1-20,EXPERT-0002:21-40" };
-  const first = assignedProfiles(env, "expert-0001");
-  const second = assignedProfiles(env, "EXPERT-0002");
+  const env = { PROFILE_ASSIGNMENTS: "EXPERT-5136:1-20,EXPERT-8427:21-40" };
+  const first = assignedProfiles(env, "expert-5136");
+  const second = assignedProfiles(env, "EXPERT-8427");
   assert.equal(PROFILES.length, 40);
   assert.equal(first.length, 20);
   assert.equal(second.length, 20);

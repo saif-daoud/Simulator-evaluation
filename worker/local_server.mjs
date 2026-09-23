@@ -99,11 +99,11 @@ const providerKey = openAiKey || azureOpenAiKey;
 const env = {
   DB,
   ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS || `http://${host}:${port},http://localhost:${port}`,
-  PARTICIPANT_CODES: process.env.PARTICIPANT_CODES || "EXPERT-0001,EXPERT-0002",
-  PROFILE_ASSIGNMENTS: process.env.PROFILE_ASSIGNMENTS || "EXPERT-0001:1-20,EXPERT-0002:21-40",
+  PARTICIPANT_CODES: process.env.PARTICIPANT_CODES || "EXPERT-5136,EXPERT-8427",
+  PROFILE_ASSIGNMENTS: process.env.PROFILE_ASSIGNMENTS || "EXPERT-5136:1-20,EXPERT-8427:21-40",
   EXPERT_ACCESS_CODES: process.env.EXPERT_ACCESS_CODES || JSON.stringify({
-    "EXPERT-0001": "LOCAL-EXPERT-0001",
-    "EXPERT-0002": "LOCAL-EXPERT-0002"
+    "EXPERT-5136": "LOCAL-EXPERT-5136",
+    "EXPERT-8427": "LOCAL-EXPERT-8427"
   }),
   TOKEN_SECRET: process.env.TOKEN_SECRET || "local-development-token-secret",
   OPENAI_MODEL: process.env.OPENAI_MODEL || "gpt-5.1",
@@ -172,7 +172,7 @@ const server = http.createServer(async (request, response) => {
 server.listen(port, host, () => {
   const responseMode = String(env.MOCK_OPENAI).toLowerCase() === "true" ? "mock responses" : env.OPENAI_MODEL;
   console.log(`CBT simulator evaluation: http://${host}:${port}`);
-  console.log("Local logins: EXPERT-0001 / LOCAL-EXPERT-0001 and EXPERT-0002 / LOCAL-EXPERT-0002");
+  console.log("Local logins: EXPERT-5136 / LOCAL-EXPERT-5136 and EXPERT-8427 / LOCAL-EXPERT-8427");
   console.log(`Patient response mode: ${responseMode}`);
   console.log(`Local database: ${localDatabasePath}`);
 });

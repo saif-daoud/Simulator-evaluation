@@ -67,11 +67,11 @@ DB.exec(fs.readFileSync(path.join(workerRoot, "schema.sql"), "utf8"));
 const env = {
   DB,
   ALLOWED_ORIGINS: "http://127.0.0.1:5500",
-  PARTICIPANT_CODES: "EXPERT-0001,EXPERT-0002",
-  PROFILE_ASSIGNMENTS: "EXPERT-0001:1-20,EXPERT-0002:21-40",
+  PARTICIPANT_CODES: "EXPERT-5136,EXPERT-8427",
+  PROFILE_ASSIGNMENTS: "EXPERT-5136:1-20,EXPERT-8427:21-40",
   EXPERT_ACCESS_CODES: JSON.stringify({
-    "EXPERT-0001": "LOCAL-EXPERT-0001",
-    "EXPERT-0002": "LOCAL-EXPERT-0002"
+    "EXPERT-5136": "LOCAL-EXPERT-5136",
+    "EXPERT-8427": "LOCAL-EXPERT-8427"
   }),
   OPENAI_MODEL: "gpt-5.1",
   OPENAI_API_KEY: "unused-in-mock-mode",
@@ -101,20 +101,20 @@ async function call(pathname, body, token = "") {
   return payload;
 }
 
-const login = await call("/api/auth/login", { participant_code: "EXPERT-0001", access_code: "LOCAL-EXPERT-0001" });
+const login = await call("/api/auth/login", { participant_code: "EXPERT-5136", access_code: "LOCAL-EXPERT-5136" });
 const token = login.token;
 const bootstrap = await call("/api/bootstrap", {}, token);
 assert.equal(bootstrap.profiles.length, 20);
 assert.deepEqual(bootstrap.profiles.map(profile => profile.id), Array.from({ length: 20 }, (_, index) => `case-${String(index + 1).padStart(2, "0")}`));
 assert.equal(JSON.stringify(bootstrap).includes("simulator_key"), false);
 
-const secondLogin = await call("/api/auth/login", { participant_code: "EXPERT-0002", access_code: "LOCAL-EXPERT-0002" });
+const secondLogin = await call("/api/auth/login", { participant_code: "EXPERT-8427", access_code: "LOCAL-EXPERT-8427" });
 const secondBootstrap = await call("/api/bootstrap", {}, secondLogin.token);
 assert.equal(secondBootstrap.profiles.length, 20);
 assert.deepEqual(secondBootstrap.profiles.map(profile => profile.id), Array.from({ length: 20 }, (_, index) => `case-${String(index + 21).padStart(2, "0")}`));
 assert.equal(bootstrap.profiles.some(profile => secondBootstrap.profiles.some(other => other.id === profile.id)), false);
 
-const crossedCode = await requestApi("/api/auth/login", { participant_code: "EXPERT-0001", access_code: "LOCAL-EXPERT-0002" });
+const crossedCode = await requestApi("/api/auth/login", { participant_code: "EXPERT-5136", access_code: "LOCAL-EXPERT-8427" });
 assert.equal(crossedCode.response.status, 403);
 const crossedCase = await requestApi("/api/studies/start", { profile_id: "case-21" }, token);
 assert.equal(crossedCase.response.status, 403);
