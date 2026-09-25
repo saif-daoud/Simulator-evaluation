@@ -167,7 +167,7 @@ test("all 40 patient profiles run through PatientAct, Patient-Ψ, and TOPAS", as
   }
 });
 
-test("live OpenAI calls use GPT-5.1 Responses structured outputs", async () => {
+test("live OpenAI calls use GPT-4.1 Responses structured outputs", async () => {
   const originalFetch = globalThis.fetch;
   let requestBody;
   globalThis.fetch = async (url, options) => {
@@ -179,7 +179,7 @@ test("live OpenAI calls use GPT-5.1 Responses structured outputs", async () => {
   };
   try {
     const result = await structuredResponse(
-      { MOCK_OPENAI: "false", OPENAI_API_KEY: "test-key", OPENAI_MODEL: "gpt-5.1" },
+      { MOCK_OPENAI: "false", OPENAI_API_KEY: "test-key", OPENAI_MODEL: "gpt-4.1" },
       {
         name: "test_schema",
         schema: strictObject({ value: { type: "string" } }),
@@ -188,9 +188,11 @@ test("live OpenAI calls use GPT-5.1 Responses structured outputs", async () => {
       }
     );
     assert.deepEqual(result, { value: "ok" });
-    assert.equal(requestBody.model, "gpt-5.1");
+    assert.equal(requestBody.model, "gpt-4.1");
+    assert.equal(requestBody.reasoning, undefined);
     assert.equal(requestBody.store, false);
     assert.equal(requestBody.text.format.type, "json_schema");
+    assert.equal(requestBody.text.verbosity, undefined);
     assert.equal(requestBody.text.format.strict, true);
     assert.equal(requestBody.safety_identifier.length, 32);
   } finally {
@@ -225,7 +227,7 @@ test("live standalone pipelines execute every original decision stage", async ()
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   };
   try {
-    const env = { MOCK_OPENAI: "false", OPENAI_API_KEY: "test-key", OPENAI_MODEL: "gpt-5.1" };
+    const env = { MOCK_OPENAI: "false", OPENAI_API_KEY: "test-key", OPENAI_MODEL: "gpt-4.1" };
     const profile = PROFILES[0].prompt_profile;
     const act = await generatePatientActResponse(
       env, profile.patient_act_case, "Why can't you accept that the tests were normal?", { turn: 0 }, "TEST"
@@ -252,7 +254,7 @@ test("live standalone pipelines execute every original decision stage", async ()
   }
 });
 
-test("live TOPAS executes its two GPT-5.1 stages with full prompt artifacts", async () => {
+test("live TOPAS executes its two GPT-4.1 stages with full prompt artifacts", async () => {
   const promptProfile = PROFILES[0].prompt_profile;
   const profile = buildTopasProfile(promptProfile);
   const stateOutput = initialTopasState(profile);
@@ -269,7 +271,7 @@ test("live TOPAS executes its two GPT-5.1 stages with full prompt artifacts", as
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   };
   try {
-    const env = { MOCK_OPENAI: "false", OPENAI_API_KEY: "test-key", OPENAI_MODEL: "gpt-5.1" };
+    const env = { MOCK_OPENAI: "false", OPENAI_API_KEY: "test-key", OPENAI_MODEL: "gpt-4.1" };
     const result = await generateTopasResponse(
       env,
       promptProfile,
@@ -279,7 +281,7 @@ test("live TOPAS executes its two GPT-5.1 stages with full prompt artifacts", as
     );
     assert.equal(requests.length, 2);
     assert.equal(requests[0].text.format.name, "topas_state_update");
-    assert.equal(requests[1].text.format, undefined);
+    assert.equal(requests[1].text?.format, undefined);
     assert.match(requests[0].instructions, /<current_state>/);
     assert.match(requests[1].instructions, /<updated_state>/);
     assert.match(result.content, /reassurance/);

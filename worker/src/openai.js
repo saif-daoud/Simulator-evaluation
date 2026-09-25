@@ -29,6 +29,12 @@ function responsesUrl(env) {
   return `${String(env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "")}/responses`;
 }
 
+function modelOptions(model) {
+  return /^gpt-5(?:[.-]|$)/i.test(model)
+    ? { reasoning: { effort: "none" }, verbosity: "low" }
+    : { reasoning: null, verbosity: null };
+}
+
 function mockStructured(name, input, instructions) {
   const transcript = Array.isArray(input)
     ? input.map(item => String(item?.content || "")).join("\n")
@@ -81,6 +87,8 @@ export async function structuredResponse(env, {
   const key = apiKey(env);
   if (!key) throw new Error("An OpenAI API key is not configured");
 
+  const model = env.OPENAI_MODEL || "gpt-4.1";
+  const options = modelOptions(model);
   const response = await fetch(responsesUrl(env), {
     method: "POST",
     headers: {
@@ -88,13 +96,13 @@ export async function structuredResponse(env, {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      model: env.OPENAI_MODEL || "gpt-5.1",
-      reasoning: { effort: "none" },
+      model,
+      ...(options.reasoning ? { reasoning: options.reasoning } : {}),
       instructions,
       input,
       max_output_tokens: maxOutputTokens,
       text: {
-        verbosity: "low",
+        ...(options.verbosity ? { verbosity: options.verbosity } : {}),
         format: {
           type: "json_schema",
           name,
@@ -138,6 +146,8 @@ export async function textResponse(env, {
   const key = apiKey(env);
   if (!key) throw new Error("An OpenAI API key is not configured");
 
+  const model = env.OPENAI_MODEL || "gpt-4.1";
+  const options = modelOptions(model);
   const response = await fetch(responsesUrl(env), {
     method: "POST",
     headers: {
@@ -145,12 +155,12 @@ export async function textResponse(env, {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      model: env.OPENAI_MODEL || "gpt-5.1",
-      reasoning: { effort: "none" },
+      model,
+      ...(options.reasoning ? { reasoning: options.reasoning } : {}),
       instructions,
       input,
       max_output_tokens: maxOutputTokens,
-      text: { verbosity: "low" },
+      ...(options.verbosity ? { text: { verbosity: options.verbosity } } : {}),
       safety_identifier: await safetyIdentifier(participantCode),
       store: false
     })

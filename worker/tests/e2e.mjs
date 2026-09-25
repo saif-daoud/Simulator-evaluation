@@ -73,7 +73,7 @@ const env = {
     "EXPERT-5136": "LOCAL-EXPERT-5136",
     "EXPERT-8427": "LOCAL-EXPERT-8427"
   }),
-  OPENAI_MODEL: "gpt-5.1",
+  OPENAI_MODEL: "gpt-4.1",
   OPENAI_API_KEY: "unused-in-mock-mode",
   MOCK_OPENAI: "true",
   TOKEN_SECRET: "integration-test-secret"

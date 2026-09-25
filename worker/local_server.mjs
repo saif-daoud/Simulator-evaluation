@@ -106,7 +106,7 @@ const env = {
     "EXPERT-8427": "LOCAL-EXPERT-8427"
   }),
   TOKEN_SECRET: process.env.TOKEN_SECRET || "local-development-token-secret",
-  OPENAI_MODEL: process.env.OPENAI_MODEL || "gpt-5.1",
+  OPENAI_MODEL: process.env.OPENAI_MODEL || "gpt-4.1",
   OPENAI_API_KEY: openAiKey,
   AZURE_OPENAI_API_KEY: azureOpenAiKey,
   OPENAI_BASE_URL: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",

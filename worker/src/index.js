@@ -592,7 +592,7 @@ async function router(request, env) {
     return responseJson({
       ok: true,
       service: "cbt-simulator-evaluation",
-      model: env.OPENAI_MODEL || "gpt-5.1",
+      model: env.OPENAI_MODEL || "gpt-4.1",
       response_mode: mock ? "mock" : "openai",
       simulators: {
         patient_psi: mock ? "mock" : "integrated",

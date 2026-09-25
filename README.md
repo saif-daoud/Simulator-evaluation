@@ -14,7 +14,7 @@ The expert plays the therapist. Each selected case is evaluated in three sequent
 Static frontend (GitHub Pages or any static host)
        |
        v
-Cloudflare Worker (authentication + study API + GPT-5.1 proxy)
+Cloudflare Worker (authentication + study API + GPT-4.1 proxy)
        |
        +-- OpenAI Responses API (standalone Patient-Ψ, PatientAct, and TOPAS pipelines)
        +-- isolated SQLite-backed Durable Object (sessions, messages, ratings)
@@ -84,7 +84,7 @@ Use a restricted, expiring OpenAI project key and set project spend limits. Do n
 - A session moves to evaluation after 50 therapist-patient turns, when the expert ends it, or when either speaker gives a direct bye/goodbye farewell.
 - The expert proceeds to the next session only after all five ratings are submitted.
 - Scores use a 1–5 anchored scale; comments are optional.
-- TOPAS builds a populated case profile deterministically, updates all 14 categorical dynamic-state dimensions before each reply, and then generates the patient utterance in a separate GPT-5.1 request.
+- TOPAS builds a populated case profile deterministically, updates all 14 categorical dynamic-state dimensions before each reply, and then generates the patient utterance in a separate GPT-4.1 request.
 
 ## Verification
 

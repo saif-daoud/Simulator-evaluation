@@ -6,7 +6,7 @@ compatibility_date = "2026-09-01"
 ALLOWED_ORIGINS = "https://saif-daoud.github.io,http://localhost:5500,http://127.0.0.1:5500"
 PARTICIPANT_CODES = "EXPERT-5136,EXPERT-8427"
 PROFILE_ASSIGNMENTS = "EXPERT-5136:1-20,EXPERT-8427:21-40"
-OPENAI_MODEL = "gpt-5.1"
+OPENAI_MODEL = "gpt-4.1"
 OPENAI_BASE_URL = "https://qcri-sakina.services.ai.azure.com/openai/v1"
 MOCK_OPENAI = "false"
 
