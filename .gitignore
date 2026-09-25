@@ -4,3 +4,8 @@ node_modules/
 dist/
 *.log
 .browser-smoke/
+server/.env
+server/logs/
+server/__pycache__/
+server/tests/__pycache__/
+server/.pytest_cache/
