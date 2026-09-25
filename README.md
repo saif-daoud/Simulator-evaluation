@@ -22,7 +22,7 @@ Cloudflare Worker (authentication + study API + simulator orchestration)
        +-- isolated SQLite-backed Durable Object (sessions, messages, ratings)
 ```
 
-The Worker sends only model requests to an authenticated relay in `interface/cbt-live-interaction`; study state remains isolated in its Durable Object. The provider key stays on the QCRI server and is never sent to the browser or stored in Cloudflare.
+The Worker sends only model requests to an authenticated relay in `interface/cbt-live-interaction`; study state remains isolated in its Durable Object. The relay runs on a separate localhost port and a separate ngrok domain from the live CBT website. The provider key stays on the QCRI server and is never sent to the browser or stored in Cloudflare.
 
 The deployed website is self-contained. `worker/src/patient_psi.js` ports the cognitive-model builder and Patient-Ψ response generator. `worker/src/patient_act.js` ports PatientAct's topic extraction, disclosure-gated memory retrieval, reaction, behavior, resistance, response, and trust-update stages. `worker/src/topas.js` ports TOPAS's two-stage dynamic-state update and utterance-generation loop, while `worker/src/topas_data.js` embeds the extracted CBT profile schema and both prompt templates. The required prompts and selected case data are bundled under `worker/src`; the runtime does not import from `simulations/`.
 
@@ -67,8 +67,8 @@ The checked-in `frontend/config.js` points local hosts at `http://127.0.0.1:8787
 
 ## Production setup
 
-1. Set `LLM_RELAY_TOKEN`, `EXPERT_ACCESS_CODES`, and `TOKEN_SECRET` with `wrangler secret put`. `LLM_RELAY_TOKEN` must match the QCRI server's `SIMULATOR_RELAY_TOKEN`; `EXPERT_ACCESS_CODES` is a JSON object whose keys are participant codes and whose values are their distinct access codes.
-2. Set `PARTICIPANT_CODES`, `PROFILE_ASSIGNMENTS`, `ALLOWED_ORIGINS`, `LLM_RELAY_BASE_URL`, and `OPENAI_MODEL` in `wrangler.toml`.
+1. Set `LLM_RELAY_BASE_URL`, `LLM_RELAY_TOKEN`, `EXPERT_ACCESS_CODES`, and `TOKEN_SECRET` with `wrangler secret put`. The base URL is `https://<separate-relay-domain>.ngrok-free.dev/api`; `LLM_RELAY_TOKEN` must match the QCRI server's `SIMULATOR_RELAY_TOKEN`. `EXPERT_ACCESS_CODES` is a JSON object whose keys are participant codes and whose values are their distinct access codes.
+2. Set `PARTICIPANT_CODES`, `PROFILE_ASSIGNMENTS`, `ALLOWED_ORIGINS`, and `OPENAI_MODEL` in `wrangler.toml`.
 3. Deploy with `npm run deploy` from `worker/`. The isolated SQLite-backed Durable Object is created by the `v1` migration and initializes its own schema.
 4. Put the deployed Worker URL in `frontend/config.js`, then publish `frontend/`.
 
