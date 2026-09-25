@@ -22,11 +22,21 @@ function extractOutputText(payload) {
 }
 
 function apiKey(env) {
+  if (env.LLM_RELAY_BASE_URL) return env.LLM_RELAY_TOKEN || "";
   return env.OPENAI_API_KEY || env.AZURE_OPENAI_API_KEY || "";
 }
 
 function responsesUrl(env) {
-  return `${String(env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "")}/responses`;
+  const baseUrl = env.LLM_RELAY_BASE_URL || env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+  return `${String(baseUrl).replace(/\/+$/, "")}/responses`;
+}
+
+function requestHeaders(env, key) {
+  return {
+    Authorization: `Bearer ${key}`,
+    "Content-Type": "application/json",
+    ...(env.LLM_RELAY_BASE_URL ? { "ngrok-skip-browser-warning": "1" } : {})
+  };
 }
 
 function modelOptions(model) {
@@ -85,16 +95,13 @@ export async function structuredResponse(env, {
 }) {
   if (String(env.MOCK_OPENAI || "false").toLowerCase() === "true") return mockStructured(name, input, instructions);
   const key = apiKey(env);
-  if (!key) throw new Error("An OpenAI API key is not configured");
+  if (!key) throw new Error("The model gateway credential is not configured");
 
   const model = env.OPENAI_MODEL || "gpt-4.1";
   const options = modelOptions(model);
   const response = await fetch(responsesUrl(env), {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json"
-    },
+    headers: requestHeaders(env, key),
     body: JSON.stringify({
       model,
       ...(options.reasoning ? { reasoning: options.reasoning } : {}),
@@ -144,16 +151,13 @@ export async function textResponse(env, {
     throw new Error(`No mock text response for ${mockName}`);
   }
   const key = apiKey(env);
-  if (!key) throw new Error("An OpenAI API key is not configured");
+  if (!key) throw new Error("The model gateway credential is not configured");
 
   const model = env.OPENAI_MODEL || "gpt-4.1";
   const options = modelOptions(model);
   const response = await fetch(responsesUrl(env), {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json"
-    },
+    headers: requestHeaders(env, key),
     body: JSON.stringify({
       model,
       ...(options.reasoning ? { reasoning: options.reasoning } : {}),

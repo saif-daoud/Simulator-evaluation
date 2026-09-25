@@ -36,11 +36,11 @@ jobs:
       - run: npm run test:e2e
       - name: Upload runtime secrets
         env:
-          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          LLM_RELAY_TOKEN: ${{ secrets.LLM_RELAY_TOKEN }}
           EXPERT_ACCESS_CODES: ${{ secrets.EXPERT_ACCESS_CODES }}
           TOKEN_SECRET: ${{ secrets.TOKEN_SECRET }}
         run: |
-          printf '%s' "$AZURE_OPENAI_API_KEY" | npx wrangler secret put AZURE_OPENAI_API_KEY
+          printf '%s' "$LLM_RELAY_TOKEN" | npx wrangler secret put LLM_RELAY_TOKEN
           printf '%s' "$EXPERT_ACCESS_CODES" | npx wrangler secret put EXPERT_ACCESS_CODES
           printf '%s' "$TOKEN_SECRET" | npx wrangler secret put TOKEN_SECRET
       - run: npm run deploy

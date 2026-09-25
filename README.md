@@ -14,13 +14,15 @@ The expert plays the therapist. Each selected case is evaluated in three sequent
 Static frontend (GitHub Pages or any static host)
        |
        v
-Cloudflare Worker (authentication + study API + GPT-4.1 proxy)
+Cloudflare Worker (authentication + study API + simulator orchestration)
        |
-       +-- OpenAI Responses API (standalone Patient-Ψ, PatientAct, and TOPAS pipelines)
+       +-- authenticated server-to-server relay on the QCRI API
+       |        |
+       |        +-- GPT-4.1 Responses API from the permitted QCRI network
        +-- isolated SQLite-backed Durable Object (sessions, messages, ratings)
 ```
 
-This project does not use or modify `interface/cbt-live-interaction` and does not connect to the QCRI inference server. The small Worker is required because an OpenAI API key must never be embedded in browser JavaScript.
+The Worker sends only model requests to an authenticated relay in `interface/cbt-live-interaction`; study state remains isolated in its Durable Object. The provider key stays on the QCRI server and is never sent to the browser or stored in Cloudflare.
 
 The deployed website is self-contained. `worker/src/patient_psi.js` ports the cognitive-model builder and Patient-Ψ response generator. `worker/src/patient_act.js` ports PatientAct's topic extraction, disclosure-gated memory retrieval, reaction, behavior, resistance, response, and trust-update stages. `worker/src/topas.js` ports TOPAS's two-stage dynamic-state update and utterance-generation loop, while `worker/src/topas_data.js` embeds the extracted CBT profile schema and both prompt templates. The required prompts and selected case data are bundled under `worker/src`; the runtime does not import from `simulations/`.
 
@@ -34,7 +36,7 @@ npm install
 npm run dev:local
 ```
 
-Open `http://127.0.0.1:8787` and use either `EXPERT-5136` / `LOCAL-EXPERT-5136` or `EXPERT-8427` / `LOCAL-EXPERT-8427`. Without an OpenAI or Azure OpenAI provider key, this command automatically uses mock patient responses and labels that mode in the header. To exercise the integrated simulators, copy `.dev.vars.example` to `.dev.vars`, configure a dedicated key and matching base URL, and keep `MOCK_OPENAI=false`.
+Open `http://127.0.0.1:8787` and use either `EXPERT-5136` / `LOCAL-EXPERT-5136` or `EXPERT-8427` / `LOCAL-EXPERT-8427`. Without a relay or provider credential, this command automatically uses mock patient responses and labels that mode in the header. To exercise the integrated simulators, copy `.dev.vars.example` to `.dev.vars`, configure the relay token, and keep `MOCK_OPENAI=false`.
 
 To use the Cloudflare runtime locally instead:
 
@@ -65,14 +67,14 @@ The checked-in `frontend/config.js` points local hosts at `http://127.0.0.1:8787
 
 ## Production setup
 
-1. Set `AZURE_OPENAI_API_KEY`, `EXPERT_ACCESS_CODES`, and `TOKEN_SECRET` with `wrangler secret put`. `EXPERT_ACCESS_CODES` is a JSON object whose keys are participant codes and whose values are their distinct access codes.
-2. Set `PARTICIPANT_CODES`, `PROFILE_ASSIGNMENTS`, `ALLOWED_ORIGINS`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` in `wrangler.toml`.
+1. Set `LLM_RELAY_TOKEN`, `EXPERT_ACCESS_CODES`, and `TOKEN_SECRET` with `wrangler secret put`. `LLM_RELAY_TOKEN` must match the QCRI server's `SIMULATOR_RELAY_TOKEN`; `EXPERT_ACCESS_CODES` is a JSON object whose keys are participant codes and whose values are their distinct access codes.
+2. Set `PARTICIPANT_CODES`, `PROFILE_ASSIGNMENTS`, `ALLOWED_ORIGINS`, `LLM_RELAY_BASE_URL`, and `OPENAI_MODEL` in `wrangler.toml`.
 3. Deploy with `npm run deploy` from `worker/`. The isolated SQLite-backed Durable Object is created by the `v1` migration and initializes its own schema.
 4. Put the deployed Worker URL in `frontend/config.js`, then publish `frontend/`.
 
-The included GitHub Actions workflows test and deploy the Worker and publish `frontend/` to GitHub Pages when `main` is pushed. They use encrypted repository secrets for Cloudflare, Azure OpenAI, the per-expert access-code map, and token signing.
+The included GitHub Actions workflows test and deploy the Worker and publish `frontend/` to GitHub Pages when `main` is pushed. They use encrypted repository secrets for Cloudflare, the relay token, the per-expert access-code map, and token signing.
 
-Use a restricted, expiring OpenAI project key and set project spend limits. Do not copy credentials from the existing live-interaction study.
+The QCRI API relay allowlists GPT-4.1 Responses requests, forces `store: false`, limits request/output sizes, and authenticates the Worker with a separate random bearer token.
 
 ## Study behavior
 

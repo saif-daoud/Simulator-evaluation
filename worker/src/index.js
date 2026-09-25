@@ -593,7 +593,7 @@ async function router(request, env) {
       ok: true,
       service: "cbt-simulator-evaluation",
       model: env.OPENAI_MODEL || "gpt-4.1",
-      response_mode: mock ? "mock" : "openai",
+      response_mode: mock ? "mock" : (env.LLM_RELAY_BASE_URL ? "qcri-relay" : "openai"),
       simulators: {
         patient_psi: mock ? "mock" : "integrated",
         patient_act: mock ? "mock" : "integrated",

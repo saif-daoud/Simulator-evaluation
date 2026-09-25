@@ -1,8 +1,9 @@
-# Configure one provider key. This deployment uses the Azure OpenAI-compatible
-# v1 endpoint from wrangler.toml, so AZURE_OPENAI_API_KEY is the expected name.
-AZURE_OPENAI_API_KEY=replace-with-a-dedicated-azure-openai-key
+# Production uses the authenticated QCRI relay configured in wrangler.toml.
+LLM_RELAY_TOKEN=replace-with-the-same-random-relay-token-as-the-qcri-server
+# For direct local provider testing, remove LLM_RELAY_BASE_URL from the local
+# Wrangler configuration and set one of these instead:
+# AZURE_OPENAI_API_KEY=replace-with-a-dedicated-azure-openai-key
 # OPENAI_API_KEY=replace-with-a-dedicated-openai-project-key
-OPENAI_BASE_URL=https://qcri-sakina.services.ai.azure.com/openai/v1
 STUDY_ACCESS_CODE=replace-with-a-new-study-access-code
 TOKEN_SECRET=replace-with-a-long-random-value
 

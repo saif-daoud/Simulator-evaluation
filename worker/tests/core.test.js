@@ -200,6 +200,39 @@ test("live OpenAI calls use GPT-4.1 Responses structured outputs", async () => {
   }
 });
 
+test("production model calls use the authenticated QCRI relay", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestHeaders;
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, "https://relay.example/api/simulator-relay/responses");
+    requestHeaders = options.headers;
+    return new Response(JSON.stringify({
+      output: [{ content: [{ type: "output_text", text: "{\"value\":\"ok\"}" }] }]
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    const result = await structuredResponse(
+      {
+        MOCK_OPENAI: "false",
+        LLM_RELAY_BASE_URL: "https://relay.example/api/simulator-relay/",
+        LLM_RELAY_TOKEN: "private-relay-token",
+        OPENAI_MODEL: "gpt-4.1"
+      },
+      {
+        name: "test_schema",
+        schema: strictObject({ value: { type: "string" } }),
+        instructions: "Return a test value.",
+        participantCode: "EXPERT-TEST"
+      }
+    );
+    assert.deepEqual(result, { value: "ok" });
+    assert.equal(requestHeaders.Authorization, "Bearer private-relay-token");
+    assert.equal(requestHeaders["ngrok-skip-browser-warning"], "1");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("live standalone pipelines execute every original decision stage", async () => {
   const outputs = {
     patient_act_topics: { topics: ["fear of missed warning signs"] },
