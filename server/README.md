@@ -63,7 +63,7 @@ bash smoke_test.sh
 After starting ngrok, test the same path through the public static domain:
 
 ```bash
-bash smoke_test.sh "https://${RELAY_NGROK_DOMAIN}"
+bash smoke_test.sh "$RELAY_NGROK_DOMAIN"
 ```
 
 Both commands must finish with `Relay smoke test passed`. The script checks relay authentication, the configured

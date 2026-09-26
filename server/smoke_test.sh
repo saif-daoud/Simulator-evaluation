@@ -18,6 +18,9 @@ set +a
 : "${PROVIDER_MODEL:?PROVIDER_MODEL is required in .env}"
 
 base_url="${1:-http://127.0.0.1:${RELAY_PORT:-8001}}"
+if [[ ! "$base_url" =~ ^https?:// ]]; then
+  base_url="https://${base_url}"
+fi
 base_url="${base_url%/}"
 
 health_file="$(mktemp)"
