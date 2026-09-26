@@ -41,6 +41,7 @@ jobs:
           EXPERT_ACCESS_CODES: ${{ secrets.EXPERT_ACCESS_CODES }}
           TOKEN_SECRET: ${{ secrets.TOKEN_SECRET }}
         run: |
+          node scripts/validate-deployment-env.mjs
           printf '%s' "$LLM_RELAY_BASE_URL" | npx wrangler secret put LLM_RELAY_BASE_URL
           printf '%s' "$LLM_RELAY_TOKEN" | npx wrangler secret put LLM_RELAY_TOKEN
           printf '%s' "$EXPERT_ACCESS_CODES" | npx wrangler secret put EXPERT_ACCESS_CODES
