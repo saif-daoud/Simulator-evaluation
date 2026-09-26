@@ -75,7 +75,7 @@ The checked-in `frontend/config.js` points local hosts at `http://127.0.0.1:8787
 
 The included GitHub Actions workflows test and deploy the Worker and publish `frontend/` to GitHub Pages when `main` is pushed. They use encrypted repository secrets for Cloudflare, the relay token, the per-expert access-code map, and token signing.
 
-The QCRI API relay allowlists GPT-4.1 Responses requests, forces `store: false`, limits request/output sizes, and authenticates the Worker with a separate random bearer token.
+The QCRI API relay calls the same project endpoint configured in `new_simulations/`, allowlists GPT-4.1 Responses requests, forces `store: false`, limits request/output sizes, and authenticates the Worker with a separate random bearer token.
 
 ## Study behavior
 

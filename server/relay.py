@@ -36,7 +36,8 @@ class RelayConfig:
             provider_api_key=os.getenv("PROVIDER_API_KEY", "").strip(),
             provider_base_url=os.getenv(
                 "PROVIDER_BASE_URL",
-                "https://qcri-sakina.services.ai.azure.com/openai/v1",
+                "https://qcri-sakina-02.services.ai.azure.com/api/projects/"
+                "qcri-sakina-02/openai/v1/",
             ).strip().rstrip("/"),
             model=os.getenv("PROVIDER_MODEL", "gpt-4.1").strip(),
             max_request_bytes=int(os.getenv("RELAY_MAX_REQUEST_BYTES", str(2 * 1024 * 1024))),

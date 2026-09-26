@@ -22,7 +22,8 @@ conda activate simulator-evaluation-api
 
 cp .env.example .env     # Skip this when the prepared private .env was uploaded.
 chmod 600 .env
-# Edit .env and set RELAY_TOKEN, PROVIDER_API_KEY, and a separate RELAY_NGROK_DOMAIN.
+# Edit .env and set RELAY_TOKEN, PROVIDER_API_KEY, PROVIDER_BASE_URL,
+# and a separate RELAY_NGROK_DOMAIN.
 
 mkdir -p logs
 nohup bash run.sh > logs/api.log 2>&1 & echo $! > logs/api.pid
@@ -35,6 +36,15 @@ tail -n 30 logs/ngrok.log
 
 The Cloudflare Worker's `LLM_RELAY_BASE_URL` must be `https://<relay-domain>/api`, and its `LLM_RELAY_TOKEN` must
 match `RELAY_TOKEN` in `.env`.
+
+`PROVIDER_BASE_URL` is the upstream QCRI model endpoint, not the ngrok URL. The default matches
+`new_simulations/`:
+
+```text
+https://qcri-sakina-02.services.ai.azure.com/api/projects/qcri-sakina-02/openai/v1/
+```
+
+The relay removes a trailing slash before appending `/responses`.
 
 To stop only this standalone server:
 

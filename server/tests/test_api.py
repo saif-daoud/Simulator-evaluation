@@ -22,6 +22,17 @@ def load_client(monkeypatch):
     return module, TestClient(module.app)
 
 
+def test_default_qcri_project_endpoint(monkeypatch):
+    monkeypatch.delenv("PROVIDER_BASE_URL", raising=False)
+    from server.relay import RelayConfig
+
+    config = RelayConfig.from_environment()
+    assert config.provider_base_url == (
+        "https://qcri-sakina-02.services.ai.azure.com/api/projects/"
+        "qcri-sakina-02/openai/v1"
+    )
+
+
 def request_payload(**updates):
     payload = {
         "model": "gpt-4.1",
