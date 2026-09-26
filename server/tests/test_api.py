@@ -3,10 +3,17 @@ from __future__ import annotations
 import importlib
 import json
 import sys
+from email.message import Message
 
 from fastapi.testclient import TestClient
 
-from server.relay import UpstreamResponse
+import server.relay as relay_module
+from server.relay import (
+    RelayConfig,
+    UpstreamResponse,
+    build_chat_completion_payload,
+    forward_response_payload,
+)
 
 
 RELAY_TOKEN = "test-relay-token-that-is-at-least-thirty-two-characters"
@@ -24,13 +31,81 @@ def load_client(monkeypatch):
 
 def test_default_qcri_project_endpoint(monkeypatch):
     monkeypatch.delenv("PROVIDER_BASE_URL", raising=False)
-    from server.relay import RelayConfig
-
     config = RelayConfig.from_environment()
     assert config.provider_base_url == (
         "https://qcri-sakina-02.services.ai.azure.com/api/projects/"
         "qcri-sakina-02/openai/v1"
     )
+
+
+def test_translates_responses_schema_to_chat_completions(monkeypatch):
+    monkeypatch.setenv("PROVIDER_MODEL", "gpt-4.1")
+    config = RelayConfig.from_environment()
+    translated = build_chat_completion_payload(request_payload(), config)
+    assert translated == {
+        "model": "gpt-4.1",
+        "messages": [
+            {"role": "system", "content": "Return JSON."},
+            {"role": "user", "content": "Hello"},
+        ],
+        "max_completion_tokens": 500,
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "result",
+                "strict": True,
+                "schema": {},
+            },
+        },
+        "temperature": 0.0,
+    }
+
+
+def test_provider_call_uses_chat_completions_and_returns_output_text(monkeypatch):
+    config = RelayConfig(
+        token=RELAY_TOKEN,
+        provider_api_key="provider-key",
+        provider_base_url="https://provider.example/openai/v1",
+        model="gpt-4.1",
+        max_request_bytes=1024,
+        max_output_tokens=1000,
+        timeout_seconds=30,
+    )
+    captured = {}
+
+    class FakeResponse:
+        status = 200
+        headers = Message()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self):
+            return json.dumps(
+                {
+                    "id": "chatcmpl-test",
+                    "model": "gpt-4.1",
+                    "choices": [{"message": {"content": '{"value":"ok"}'}}],
+                    "usage": {"prompt_tokens": 10, "completion_tokens": 4},
+                }
+            ).encode()
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["payload"] = json.loads(request.data)
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(relay_module.urllib.request, "urlopen", fake_urlopen)
+    upstream = forward_response_payload(request_payload(), config)
+    assert captured["url"] == "https://provider.example/openai/v1/chat/completions"
+    assert captured["payload"]["response_format"]["type"] == "json_schema"
+    assert captured["timeout"] == 30
+    assert upstream.status_code == 200
+    assert json.loads(upstream.body)["output_text"] == '{"value":"ok"}'
 
 
 def request_payload(**updates):

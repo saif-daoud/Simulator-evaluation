@@ -6,7 +6,7 @@ processes, environment variables, database, or deployment dependency on any othe
 The service exposes only:
 
 - `GET /api/health`
-- `POST /api/responses` (authenticated server-to-server GPT-4.1 Responses relay)
+- `POST /api/responses` (authenticated server-to-server GPT-4.1 model relay)
 
 Study authentication, transcripts, and ratings remain in the simulator website's Cloudflare Worker and Durable Object.
 
@@ -44,7 +44,9 @@ match `RELAY_TOKEN` in `.env`.
 https://qcri-sakina-02.services.ai.azure.com/api/projects/qcri-sakina-02/openai/v1/
 ```
 
-The relay removes a trailing slash before appending `/responses`.
+The Worker sends its existing Responses-shaped payload to this relay. The relay validates and converts it to the
+same `/chat/completions` request style used by `new_simulations/`, including conversion of JSON schemas to Chat
+Completions `response_format`, and returns a Responses-compatible result to the Worker.
 
 To stop only this standalone server:
 

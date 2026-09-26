@@ -79,6 +79,8 @@ async def responses(request: Request, authorization: str | None = Header(default
 
     try:
         upstream = await asyncio.to_thread(forward_response_payload, forwarded, RELAY_CONFIG)
+    except RelayValidationError as exc:
+        return JSONResponse({"error": {"message": str(exc)}}, status_code=422)
     except Exception as exc:
         LOGGER.exception("Provider request failed: %s", type(exc).__name__)
         return JSONResponse(

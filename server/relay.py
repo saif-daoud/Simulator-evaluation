@@ -97,10 +97,94 @@ def validate_response_payload(payload: Any, config: RelayConfig) -> dict[str, An
     return forwarded
 
 
+def _message_content(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        if parts:
+            return "\n".join(parts)
+    raise RelayValidationError("Every input message must contain text content.")
+
+
+def build_chat_completion_payload(payload: dict[str, Any], config: RelayConfig) -> dict[str, Any]:
+    messages: list[dict[str, str]] = [
+        {"role": "system", "content": payload["instructions"].strip()}
+    ]
+    input_value = payload["input"]
+    if isinstance(input_value, str):
+        messages.append({"role": "user", "content": input_value})
+    else:
+        for item in input_value:
+            if not isinstance(item, dict):
+                raise RelayValidationError("Every input item must be a message object.")
+            role = item.get("role")
+            if role not in {"user", "assistant"}:
+                raise RelayValidationError("Input message roles must be user or assistant.")
+            messages.append({"role": role, "content": _message_content(item.get("content"))})
+
+    chat_payload: dict[str, Any] = {
+        "model": config.model,
+        "messages": messages,
+        "max_completion_tokens": payload["max_output_tokens"],
+    }
+    text_options = payload.get("text") or {}
+    output_format = text_options.get("format")
+    if output_format is not None:
+        if (
+            not isinstance(output_format, dict)
+            or output_format.get("type") != "json_schema"
+            or not isinstance(output_format.get("name"), str)
+            or not isinstance(output_format.get("schema"), dict)
+        ):
+            raise RelayValidationError("text.format must contain a named JSON schema.")
+        chat_payload["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": output_format["name"],
+                "strict": output_format.get("strict", True),
+                "schema": output_format["schema"],
+            },
+        }
+        chat_payload["temperature"] = 0.0
+    else:
+        chat_payload["temperature"] = 0.7
+        chat_payload["top_p"] = 0.9
+    return chat_payload
+
+
+def _responses_compatible_body(body: bytes) -> bytes:
+    try:
+        payload = json.loads(body)
+        content = payload["choices"][0]["message"]["content"]
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("empty completion")
+    except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise RuntimeError("The provider returned no chat completion text.") from exc
+    return json.dumps(
+        {
+            "id": payload.get("id"),
+            "model": payload.get("model"),
+            "output_text": content.strip(),
+            "usage": payload.get("usage"),
+        },
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+
+
 def forward_response_payload(payload: dict[str, Any], config: RelayConfig) -> UpstreamResponse:
-    body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    chat_payload = build_chat_completion_payload(payload, config)
+    body = json.dumps(chat_payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
-        f"{config.provider_base_url}/responses",
+        f"{config.provider_base_url}/chat/completions",
         data=body,
         method="POST",
         headers={
@@ -113,8 +197,8 @@ def forward_response_payload(payload: dict[str, Any], config: RelayConfig) -> Up
         with urllib.request.urlopen(request, timeout=config.timeout_seconds) as response:
             return UpstreamResponse(
                 status_code=response.status,
-                body=response.read(),
-                content_type=response.headers.get_content_type(),
+                body=_responses_compatible_body(response.read()),
+                content_type="application/json",
             )
     except urllib.error.HTTPError as exc:
         return UpstreamResponse(
