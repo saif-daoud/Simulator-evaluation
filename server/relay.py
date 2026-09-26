@@ -14,6 +14,7 @@ ALLOWED_RESPONSE_FIELDS = {
     "input",
     "max_output_tokens",
     "text",
+    "reasoning",
     "safety_identifier",
     "store",
 }
@@ -86,6 +87,8 @@ def validate_response_payload(payload: Any, config: RelayConfig) -> dict[str, An
         )
     if "text" in payload and not isinstance(payload["text"], dict):
         raise RelayValidationError("text must be an object.")
+    if "reasoning" in payload and not isinstance(payload["reasoning"], dict):
+        raise RelayValidationError("reasoning must be an object.")
     if "safety_identifier" in payload:
         identifier = payload["safety_identifier"]
         if not isinstance(identifier, str) or not (1 <= len(identifier) <= 64):

@@ -61,6 +61,24 @@ def test_translates_responses_schema_to_chat_completions(monkeypatch):
     }
 
 
+def test_accepts_gpt_5_1_responses_options_without_forwarding_them(monkeypatch):
+    monkeypatch.setenv("PROVIDER_MODEL", "gpt-5.1")
+    config = RelayConfig.from_environment()
+    source = request_payload(
+        model="gpt-5.1",
+        reasoning={"effort": "none"},
+        text={
+            "verbosity": "low",
+            "format": {"type": "json_schema", "name": "result", "strict": True, "schema": {}},
+        },
+    )
+    validated = relay_module.validate_response_payload(source, config)
+    translated = build_chat_completion_payload(validated, config)
+    assert translated["model"] == "gpt-5.1"
+    assert "reasoning" not in translated
+    assert "verbosity" not in translated
+
+
 def test_provider_call_uses_chat_completions_and_returns_output_text(monkeypatch):
     config = RelayConfig(
         token=RELAY_TOKEN,
