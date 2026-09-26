@@ -52,6 +52,24 @@ The Worker sends its existing Responses-shaped payload to this relay. The relay 
 same `/chat/completions` request style used by `new_simulations/`, including conversion of JSON schemas to Chat
 Completions `response_format`, and returns a Responses-compatible result to the Worker.
 
+## End-to-end verification
+
+After starting the API, test the complete local relay-to-QCRI model path (this makes one small model call):
+
+```bash
+bash smoke_test.sh
+```
+
+After starting ngrok, test the same path through the public static domain:
+
+```bash
+bash smoke_test.sh "https://${RELAY_NGROK_DOMAIN}"
+```
+
+Both commands must finish with `Relay smoke test passed`. The script checks relay authentication, the configured
+model, the upstream QCRI endpoint, structured output conversion, and response parsing without printing either API
+credential.
+
 To stop only this standalone server:
 
 ```bash
