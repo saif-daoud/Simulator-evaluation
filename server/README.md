@@ -34,6 +34,10 @@ sleep 3
 tail -n 30 logs/ngrok.log
 ```
 
+Reserve a separate static domain in the ngrok dashboard's **Domains** section, then copy its exact hostname into
+`RELAY_NGROK_DOMAIN` without a path. Either `example.ngrok-free.dev` or `https://example.ngrok-free.dev` is accepted;
+`run_ngrok.sh` normalizes it to an HTTPS URL for the ngrok CLI.
+
 The Cloudflare Worker's `LLM_RELAY_BASE_URL` must be `https://<relay-domain>/api`, and its `LLM_RELAY_TOKEN` must
 match `RELAY_TOKEN` in `.env`.
 
