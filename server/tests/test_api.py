@@ -79,6 +79,39 @@ def test_accepts_gpt_5_1_responses_options_without_forwarding_them(monkeypatch):
     assert "verbosity" not in translated
 
 
+def test_translates_patient_act_conversation_history(monkeypatch):
+    monkeypatch.setenv("PROVIDER_MODEL", "gpt-4.1")
+    config = RelayConfig.from_environment()
+    source = request_payload(
+        input=[
+            {"role": "user", "content": "What would you like to discuss?"},
+            {"role": "assistant", "content": "I have been worried this week."},
+            {
+                "role": "user",
+                "content": [{"type": "input_text", "text": "What happens when you worry?"}],
+            },
+        ]
+    )
+    translated = build_chat_completion_payload(source, config)
+    assert translated["messages"] == [
+        {"role": "system", "content": "Return JSON."},
+        {"role": "user", "content": "What would you like to discuss?"},
+        {"role": "assistant", "content": "I have been worried this week."},
+        {"role": "user", "content": "What happens when you worry?"},
+    ]
+
+
+def test_translates_topas_plain_text_request(monkeypatch):
+    monkeypatch.setenv("PROVIDER_MODEL", "gpt-4.1")
+    config = RelayConfig.from_environment()
+    source = request_payload()
+    source.pop("text")
+    translated = build_chat_completion_payload(source, config)
+    assert "response_format" not in translated
+    assert translated["temperature"] == 0.7
+    assert translated["top_p"] == 0.9
+
+
 def test_provider_call_uses_chat_completions_and_returns_output_text(monkeypatch):
     config = RelayConfig(
         token=RELAY_TOKEN,
