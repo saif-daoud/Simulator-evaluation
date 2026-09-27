@@ -1,5 +1,5 @@
-# Production uses a dedicated authenticated QCRI relay and ngrok domain.
-LLM_RELAY_BASE_URL=https://replace-with-the-separate-relay-domain.ngrok-free.dev/api
+# Production can use the shared ngrok gateway's isolated relay path.
+LLM_RELAY_BASE_URL=https://polka-evasive-pleat.ngrok-free.dev/simulator-evaluation-relay/api
 LLM_RELAY_TOKEN=replace-with-the-same-random-relay-token-as-the-qcri-server
 # For direct local provider testing, remove LLM_RELAY_BASE_URL from the local
 # Wrangler configuration and set one of these instead:

@@ -12,6 +12,10 @@ const VALID_ENV = {
 
 test("deployment environment accepts a complete standalone relay configuration", () => {
   assert.equal(validateDeploymentEnvironment(VALID_ENV), true);
+  assert.equal(validateDeploymentEnvironment({
+    ...VALID_ENV,
+    LLM_RELAY_BASE_URL: "https://relay-example.ngrok-free.dev/simulator-evaluation-relay/api"
+  }), true);
 });
 
 test("deployment environment rejects missing and placeholder relay settings", () => {

@@ -10,6 +10,79 @@ The service exposes only:
 
 Study authentication, transcripts, and ratings remain in the simulator website's Cloudflare Worker and Durable Object.
 
+## Recommended: share the existing ngrok hostname safely
+
+The standalone gateway lets both websites use `polka-evasive-pleat.ngrok-free.dev` without endpoint pooling and
+without modifying the `cbt-live-interaction` project:
+
+- Every normal path is forwarded unchanged to the existing website on `127.0.0.1:8000`.
+- Only `/simulator-evaluation-relay/` is forwarded to this authenticated relay on `127.0.0.1:8001`.
+- ngrok points to the gateway on `127.0.0.1:8002`.
+
+Add these values to this server's `.env`:
+
+```dotenv
+SHARED_EXISTING_ORIGIN=http://127.0.0.1:8000
+SHARED_RELAY_ORIGIN=http://127.0.0.1:8001
+SHARED_GATEWAY_HOST=127.0.0.1
+SHARED_GATEWAY_PORT=8002
+SHARED_GATEWAY_TIMEOUT_SECONDS=600
+SHARED_NGROK_DOMAIN=polka-evasive-pleat.ngrok-free.dev
+```
+
+Start both application servers first, then start and test the gateway without changing the live tunnel:
+
+```bash
+nohup bash run_gateway.sh > logs/gateway.log 2>&1 < /dev/null &
+echo $! > logs/gateway.pid
+disown
+sleep 3
+
+curl --fail http://127.0.0.1:8002/__simulator_gateway_health
+curl --fail http://127.0.0.1:8002/api/health
+curl --fail http://127.0.0.1:8002/simulator-evaluation-relay/api/health
+```
+
+The second response must be the existing website's health response; the third must be this relay with
+`"configured":true` and `"model":"gpt-4.1"`.
+
+There is a brief one-time interruption while replacing only the old ngrok process. Find that exact process with
+`ps -ef | grep '[n]grok'`, stop its PID, and immediately start the shared tunnel:
+
+```bash
+nohup bash run_shared_ngrok.sh > logs/shared-ngrok.log 2>&1 < /dev/null &
+echo $! > logs/shared-ngrok.pid
+disown
+sleep 5
+tail -n 30 logs/shared-ngrok.log
+```
+
+Never use `--pooling-enabled`: pooling would distribute requests between unrelated upstreams instead of routing
+them by path. Verify both public routes and make a small real model call:
+
+```bash
+curl --fail -H 'ngrok-skip-browser-warning: 1' \
+  https://polka-evasive-pleat.ngrok-free.dev/api/health
+curl --fail -H 'ngrok-skip-browser-warning: 1' \
+  https://polka-evasive-pleat.ngrok-free.dev/simulator-evaluation-relay/api/health
+bash smoke_test.sh \
+  https://polka-evasive-pleat.ngrok-free.dev/simulator-evaluation-relay
+```
+
+Set the deployed Worker's secrets to:
+
+```text
+LLM_RELAY_BASE_URL=https://polka-evasive-pleat.ngrok-free.dev/simulator-evaluation-relay/api
+LLM_RELAY_TOKEN=<the same RELAY_TOKEN stored in this server's .env>
+```
+
+To stop this arrangement without stopping either application server:
+
+```bash
+kill "$(cat logs/shared-ngrok.pid)" 2>/dev/null || true
+kill "$(cat logs/gateway.pid)" 2>/dev/null || true
+```
+
 ## Upload and run
 
 Upload this entire `server/` directory as `~/simulator-evaluation-server/`, then run:

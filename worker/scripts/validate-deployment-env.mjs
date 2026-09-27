@@ -20,7 +20,7 @@ export function validateDeploymentEnvironment(env) {
   }
   if (
     relayUrl.protocol !== "https:" ||
-    relayUrl.pathname.replace(/\/+$/, "") !== "/api" ||
+    !relayUrl.pathname.replace(/\/+$/, "").endsWith("/api") ||
     relayUrl.search ||
     relayUrl.hash
   ) {
