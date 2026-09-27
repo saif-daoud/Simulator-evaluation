@@ -35,8 +35,9 @@ bash print_ngrok_url.sh
 ```
 
 With `RELAY_NGROK_DOMAIN=` left blank, ngrok assigns a free temporary URL. The URL printed by
-`print_ngrok_url.sh` changes whenever this tunnel is restarted. `NGROK_WEB_ADDR=127.0.0.1:4041` keeps its local
-inspector separate from another ngrok process that uses the default port 4040.
+`print_ngrok_url.sh` changes whenever this tunnel is restarted. The launcher requests
+`NGROK_WEB_ADDR=127.0.0.1:4041` on ngrok versions that support the option. On older versions, ngrok selects an
+available inspector port and `print_ngrok_url.sh` finds the tunnel by its port-8001 upstream.
 
 Do not use `polka-evasive-pleat.ngrok-free.dev` here: that hostname belongs to the other website. Sharing it would
 couple the two services and can send requests to the wrong server.

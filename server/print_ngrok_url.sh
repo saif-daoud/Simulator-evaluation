@@ -12,22 +12,58 @@ if [[ -f .env ]]; then
 fi
 
 ngrok_web_addr="${NGROK_WEB_ADDR:-127.0.0.1:4041}"
-tunnels_json="$(curl --fail --silent --show-error "http://${ngrok_web_addr}/api/tunnels")"
+relay_port="${RELAY_PORT:-8001}"
 
-NGROK_TUNNELS_JSON="$tunnels_json" python - <<'PY'
+inspector_addresses=("$ngrok_web_addr")
+for inspector_port in {4040..4050}; do
+  candidate="127.0.0.1:${inspector_port}"
+  if [[ "$candidate" != "$ngrok_web_addr" ]]; then
+    inspector_addresses+=("$candidate")
+  fi
+done
+
+for inspector_address in "${inspector_addresses[@]}"; do
+  if ! tunnels_json="$(curl --fail --silent "http://${inspector_address}/api/tunnels" 2>/dev/null)"; then
+    continue
+  fi
+  if public_url="$(NGROK_TUNNELS_JSON="$tunnels_json" RELAY_PORT="$relay_port" python - <<'PY'
 import json
 import os
-import sys
 
 payload = json.loads(os.environ["NGROK_TUNNELS_JSON"])
-urls = [
-    tunnel.get("public_url", "")
-    for tunnel in payload.get("tunnels", [])
-    if tunnel.get("public_url", "").startswith("https://")
-]
-if not urls:
-    print("No HTTPS ngrok tunnel was found.", file=sys.stderr)
-    raise SystemExit(1)
+relay_port = os.environ["RELAY_PORT"]
 
-print(urls[0])
+for tunnel in payload.get("tunnels", []):
+    config = tunnel.get("config") or {}
+    upstreams = (
+        config.get("addr", ""),
+        tunnel.get("forwards_to", ""),
+        tunnel.get("upstream_url", ""),
+    )
+    points_to_relay = any(
+        value.rstrip("/").endswith(f":{relay_port}") for value in upstreams if isinstance(value, str)
+    )
+    public_url = tunnel.get("public_url", "")
+    if points_to_relay and public_url.startswith("https://"):
+        print(public_url)
+        raise SystemExit(0)
+
+raise SystemExit(1)
 PY
+  )"; then
+    printf '%s\n' "$public_url"
+    exit 0
+  fi
+done
+
+if [[ -f logs/ngrok.log ]]; then
+  public_url="$(grep -oE 'url=https://[^[:space:]]+' logs/ngrok.log | tail -n 1 | sed -E 's/^url=//; s/[\"]$//' || true)"
+  if [[ -n "$public_url" ]]; then
+    printf '%s\n' "$public_url"
+    exit 0
+  fi
+fi
+
+echo "No HTTPS ngrok tunnel forwarding to port ${relay_port} was found." >&2
+echo "Check logs/ngrok.log and confirm the ngrok process is still running." >&2
+exit 1
