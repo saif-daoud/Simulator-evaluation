@@ -60,6 +60,10 @@ The URL has the form `https://random-words.trycloudflare.com` and changes whenev
 Quick Tunnels are intended for testing and evaluation, have no uptime SLA, allow up to 200 concurrent in-flight
 requests, and do not support Server-Sent Events. This relay does not use Server-Sent Events.
 
+Cloudflare Tunnel requires outbound port 7844: UDP for QUIC or TCP for HTTP/2. `print_cloudflared_url.sh` reports
+the URL only after `cloudflared` has registered a tunnel connection. If both transports are blocked, ask the
+network administrator to allow outbound TCP port 7844 to Cloudflare Tunnel endpoints before continuing.
+
 ## Separate ngrok domain (optional)
 
 Do not use `polka-evasive-pleat.ngrok-free.dev` here. If a separate ngrok domain is available later, copy its exact
