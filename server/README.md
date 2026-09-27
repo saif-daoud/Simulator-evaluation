@@ -23,30 +23,58 @@ conda activate simulator-evaluation-api
 cp .env.example .env     # Skip this when the prepared private .env was uploaded.
 chmod 600 .env
 # Edit .env and set RELAY_TOKEN, PROVIDER_API_KEY, PROVIDER_BASE_URL,
-# and leave RELAY_NGROK_DOMAIN blank for a free temporary URL.
+# RELAY_NGROK_DOMAIN is needed only when using ngrok.
 
 mkdir -p logs
 nohup bash run.sh > logs/api.log 2>&1 & echo $! > logs/api.pid
 curl --fail http://127.0.0.1:8001/api/health
 
+```
+
+## Free independent tunnel
+
+The existing ngrok account assigns `polka-evasive-pleat.ngrok-free.dev` when no URL is specified. Because that
+endpoint is already online for another website, a second ngrok agent exits with `ERR_NGROK_334`. Do not enable
+ngrok endpoint pooling: it would load-balance requests between two unrelated applications.
+
+Use a Cloudflare Quick Tunnel to obtain an independent free URL without changing or stopping the other website.
+Install `cloudflared` once (the following download is for an x86-64 Linux server):
+
+```bash
+mkdir -p "$HOME/bin"
+curl --fail --location \
+  --output "$HOME/bin/cloudflared" \
+  https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+chmod 700 "$HOME/bin/cloudflared"
+"$HOME/bin/cloudflared" version
+```
+
+Start the Quick Tunnel and print its URL:
+
+```bash
+nohup bash run_cloudflared.sh > logs/cloudflared.log 2>&1 & echo $! > logs/cloudflared.pid
+bash print_cloudflared_url.sh
+```
+
+The URL has the form `https://random-words.trycloudflare.com` and changes whenever the tunnel is restarted.
+Quick Tunnels are intended for testing and evaluation, have no uptime SLA, allow up to 200 concurrent in-flight
+requests, and do not support Server-Sent Events. This relay does not use Server-Sent Events.
+
+## Separate ngrok domain (optional)
+
+Do not use `polka-evasive-pleat.ngrok-free.dev` here. If a separate ngrok domain is available later, copy its exact
+hostname into `RELAY_NGROK_DOMAIN`, then run:
+
+```bash
 nohup bash run_ngrok.sh > logs/ngrok.log 2>&1 & echo $! > logs/ngrok.pid
 sleep 3
 bash print_ngrok_url.sh
 ```
 
-With `RELAY_NGROK_DOMAIN=` left blank, ngrok assigns a free temporary URL. The URL printed by
-`print_ngrok_url.sh` changes whenever this tunnel is restarted. The launcher requests
-`NGROK_WEB_ADDR=127.0.0.1:4041` on ngrok versions that support the option. On older versions, ngrok selects an
-available inspector port and `print_ngrok_url.sh` finds the tunnel by its port-8001 upstream.
-
-Do not use `polka-evasive-pleat.ngrok-free.dev` here: that hostname belongs to the other website. Sharing it would
-couple the two services and can send requests to the wrong server.
-
-If a separate static domain is available later, copy its exact hostname into `RELAY_NGROK_DOMAIN` without a path.
-Either `example.ngrok-free.dev` or `https://example.ngrok-free.dev` is accepted.
+Either `example.ngrok-free.dev` or `https://example.ngrok-free.dev` is accepted as a separate domain value.
 
 The Cloudflare Worker's `LLM_RELAY_BASE_URL` must be the printed URL plus `/api`, for example
-`https://temporary-name.ngrok.app/api`. Its `LLM_RELAY_TOKEN` must match `RELAY_TOKEN` in `.env`. After every
+`https://random-words.trycloudflare.com/api`. Its `LLM_RELAY_TOKEN` must match `RELAY_TOKEN` in `.env`. After every
 temporary-URL change, update this Worker secret and redeploy the Worker.
 
 `PROVIDER_BASE_URL` is the upstream QCRI model endpoint, not the ngrok URL. The default matches
@@ -68,10 +96,10 @@ After starting the API, test the complete local relay-to-QCRI model path (this m
 bash smoke_test.sh
 ```
 
-After starting ngrok, test the same path through the public static domain:
+After starting the Cloudflare Quick Tunnel, test the same path through its public URL:
 
 ```bash
-RELAY_PUBLIC_URL="$(bash print_ngrok_url.sh)"
+RELAY_PUBLIC_URL="$(bash print_cloudflared_url.sh)"
 bash smoke_test.sh "$RELAY_PUBLIC_URL"
 ```
 
@@ -84,5 +112,6 @@ To stop only this standalone server:
 ```bash
 cd ~/simulator-evaluation-server
 kill "$(cat logs/ngrok.pid)" 2>/dev/null || true
+kill "$(cat logs/cloudflared.pid)" 2>/dev/null || true
 kill "$(cat logs/api.pid)" 2>/dev/null || true
 ```

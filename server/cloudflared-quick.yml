@@ -1,0 +1,2 @@
+# Intentionally empty. This prevents a user-level cloudflared configuration
+# from disabling accountless Quick Tunnel mode.

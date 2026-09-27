@@ -55,7 +55,8 @@ if [[ -n "$relay_domain" ]]; then
   fi
   ngrok_args+=(--url "$relay_url")
 else
-  echo "RELAY_NGROK_DOMAIN is blank; ngrok will assign a temporary public URL." >&2
+  echo "RELAY_NGROK_DOMAIN is blank; ngrok will use the account's default endpoint." >&2
+  echo "If that endpoint is already online, use run_cloudflared.sh for an independent free URL." >&2
   echo "Run 'bash print_ngrok_url.sh' after the tunnel starts to display it." >&2
 fi
 
