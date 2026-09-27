@@ -23,7 +23,7 @@ conda activate simulator-evaluation-api
 cp .env.example .env     # Skip this when the prepared private .env was uploaded.
 chmod 600 .env
 # Edit .env and set RELAY_TOKEN, PROVIDER_API_KEY, PROVIDER_BASE_URL,
-# and a separate RELAY_NGROK_DOMAIN.
+# and leave RELAY_NGROK_DOMAIN blank for a free temporary URL.
 
 mkdir -p logs
 nohup bash run.sh > logs/api.log 2>&1 & echo $! > logs/api.pid
@@ -31,15 +31,22 @@ curl --fail http://127.0.0.1:8001/api/health
 
 nohup bash run_ngrok.sh > logs/ngrok.log 2>&1 & echo $! > logs/ngrok.pid
 sleep 3
-tail -n 30 logs/ngrok.log
+bash print_ngrok_url.sh
 ```
 
-Reserve a separate static domain in the ngrok dashboard's **Domains** section, then copy its exact hostname into
-`RELAY_NGROK_DOMAIN` without a path. Either `example.ngrok-free.dev` or `https://example.ngrok-free.dev` is accepted;
-`run_ngrok.sh` normalizes it to an HTTPS URL for the ngrok CLI.
+With `RELAY_NGROK_DOMAIN=` left blank, ngrok assigns a free temporary URL. The URL printed by
+`print_ngrok_url.sh` changes whenever this tunnel is restarted. `NGROK_WEB_ADDR=127.0.0.1:4041` keeps its local
+inspector separate from another ngrok process that uses the default port 4040.
 
-The Cloudflare Worker's `LLM_RELAY_BASE_URL` must be `https://<relay-domain>/api`, and its `LLM_RELAY_TOKEN` must
-match `RELAY_TOKEN` in `.env`.
+Do not use `polka-evasive-pleat.ngrok-free.dev` here: that hostname belongs to the other website. Sharing it would
+couple the two services and can send requests to the wrong server.
+
+If a separate static domain is available later, copy its exact hostname into `RELAY_NGROK_DOMAIN` without a path.
+Either `example.ngrok-free.dev` or `https://example.ngrok-free.dev` is accepted.
+
+The Cloudflare Worker's `LLM_RELAY_BASE_URL` must be the printed URL plus `/api`, for example
+`https://temporary-name.ngrok.app/api`. Its `LLM_RELAY_TOKEN` must match `RELAY_TOKEN` in `.env`. After every
+temporary-URL change, update this Worker secret and redeploy the Worker.
 
 `PROVIDER_BASE_URL` is the upstream QCRI model endpoint, not the ngrok URL. The default matches
 `new_simulations/`:
@@ -63,7 +70,8 @@ bash smoke_test.sh
 After starting ngrok, test the same path through the public static domain:
 
 ```bash
-bash smoke_test.sh "$RELAY_NGROK_DOMAIN"
+RELAY_PUBLIC_URL="$(bash print_ngrok_url.sh)"
+bash smoke_test.sh "$RELAY_PUBLIC_URL"
 ```
 
 Both commands must finish with `Relay smoke test passed`. The script checks relay authentication, the configured

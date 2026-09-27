@@ -68,7 +68,7 @@ The checked-in `frontend/config.js` points local hosts at `http://127.0.0.1:8787
 ## Production setup
 
 1. Upload the complete `server/` directory to the QCRI server and follow [`server/README.md`](server/README.md). It does not depend on another website or server project.
-2. Set `LLM_RELAY_BASE_URL`, `LLM_RELAY_TOKEN`, `EXPERT_ACCESS_CODES`, and `TOKEN_SECRET` with `wrangler secret put`. The base URL is `https://<separate-relay-domain>.ngrok-free.dev/api`; `LLM_RELAY_TOKEN` must match the standalone server's `RELAY_TOKEN`. `EXPERT_ACCESS_CODES` is a JSON object whose keys are participant codes and whose values are their distinct access codes.
+2. Set `LLM_RELAY_BASE_URL`, `LLM_RELAY_TOKEN`, `EXPERT_ACCESS_CODES`, and `TOKEN_SECRET` with `wrangler secret put`. The base URL is the standalone relay's public HTTPS URL followed by `/api`; it may be an ngrok temporary URL. `LLM_RELAY_TOKEN` must match the standalone server's `RELAY_TOKEN`. `EXPERT_ACCESS_CODES` is a JSON object whose keys are participant codes and whose values are their distinct access codes.
 3. Set `PARTICIPANT_CODES`, `PROFILE_ASSIGNMENTS`, `ALLOWED_ORIGINS`, and `OPENAI_MODEL` in `wrangler.toml`.
 4. Deploy with `npm run deploy` from `worker/`. The isolated SQLite-backed Durable Object is created by the `v1` migration and initializes its own schema.
 5. Put the deployed Worker URL in `frontend/config.js`, then publish `frontend/`.
