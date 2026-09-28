@@ -2,8 +2,19 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS participants (
   participant_code TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  cohort_code TEXT NOT NULL,
+  assignment_start INTEGER NOT NULL,
+  assignment_end INTEGER NOT NULL,
+  name TEXT NOT NULL DEFAULT '',
+  role TEXT NOT NULL DEFAULT '',
+  institution TEXT NOT NULL DEFAULT '',
+  latest_degree TEXT NOT NULL DEFAULT '',
+  years_experience INTEGER,
+  profile_completed INTEGER NOT NULL DEFAULT 0 CHECK (profile_completed IN (0, 1)),
   created_at TEXT NOT NULL,
-  last_seen_at TEXT NOT NULL
+  last_seen_at TEXT NOT NULL,
+  UNIQUE (cohort_code, assignment_start, assignment_end)
 );
 
 CREATE TABLE IF NOT EXISTS studies (

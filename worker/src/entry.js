@@ -7,8 +7,19 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS participants (
   participant_code TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  cohort_code TEXT NOT NULL,
+  assignment_start INTEGER NOT NULL,
+  assignment_end INTEGER NOT NULL,
+  name TEXT NOT NULL DEFAULT '',
+  role TEXT NOT NULL DEFAULT '',
+  institution TEXT NOT NULL DEFAULT '',
+  latest_degree TEXT NOT NULL DEFAULT '',
+  years_experience INTEGER,
+  profile_completed INTEGER NOT NULL DEFAULT 0 CHECK (profile_completed IN (0, 1)),
   created_at TEXT NOT NULL,
-  last_seen_at TEXT NOT NULL
+  last_seen_at TEXT NOT NULL,
+  UNIQUE (cohort_code, assignment_start, assignment_end)
 );
 
 CREATE TABLE IF NOT EXISTS studies (
@@ -124,6 +135,31 @@ export class StudyStore extends DurableObject {
     this.database = new DurableDatabase(ctx.storage);
     ctx.blockConcurrencyWhile(async () => {
       ctx.storage.sql.exec(STUDY_SCHEMA).toArray();
+      const columns = new Set(
+        ctx.storage.sql.exec("PRAGMA table_info(participants)").toArray().map(column => column.name)
+      );
+      const additions = [
+        ["email", "TEXT"],
+        ["cohort_code", "TEXT"],
+        ["assignment_start", "INTEGER"],
+        ["assignment_end", "INTEGER"],
+        ["name", "TEXT NOT NULL DEFAULT ''"],
+        ["role", "TEXT NOT NULL DEFAULT ''"],
+        ["institution", "TEXT NOT NULL DEFAULT ''"],
+        ["latest_degree", "TEXT NOT NULL DEFAULT ''"],
+        ["years_experience", "INTEGER"],
+        ["profile_completed", "INTEGER NOT NULL DEFAULT 0 CHECK (profile_completed IN (0, 1))"]
+      ];
+      for (const [name, definition] of additions) {
+        if (!columns.has(name)) ctx.storage.sql.exec(`ALTER TABLE participants ADD COLUMN ${name} ${definition}`);
+      }
+      ctx.storage.sql.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_email
+          ON participants(email) WHERE email IS NOT NULL AND email != '';
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_assignment
+          ON participants(cohort_code, assignment_start, assignment_end)
+          WHERE email IS NOT NULL AND email != '';
+      `).toArray();
     });
   }
 
@@ -134,6 +170,6 @@ export class StudyStore extends DurableObject {
 
 export default {
   async fetch(request, env) {
-    return env.STUDY_STORE.getByName("simulator-evaluation-study").fetch(request);
+    return env.STUDY_STORE.getByName("simulator-evaluation-study-v2").fetch(request);
   }
 };

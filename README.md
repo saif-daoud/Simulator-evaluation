@@ -36,7 +36,7 @@ npm install
 npm run dev:local
 ```
 
-Open `http://127.0.0.1:8787` and use either `EXPERT-5136` / `LOCAL-EXPERT-5136` or `EXPERT-8427` / `LOCAL-EXPERT-8427`. Without a relay or provider credential, this command automatically uses mock patient responses and labels that mode in the header. To exercise the integrated simulators, copy `.dev.vars.example` to `.dev.vars`, configure the relay token, and keep `MOCK_OPENAI=false`.
+Open `http://127.0.0.1:8787`, enter an email address, and use either `LOCAL-EXPERT-5136` (shared referral cohort) or `LOCAL-EXPERT-8427` (the 10-case expert). Each new email in the shared cohort receives one unique patient from cases 1–20; the second code assigns cases 21–30 to one expert. Without a relay or provider credential, this command automatically uses mock patient responses and labels that mode in the header. To exercise the integrated simulators, copy `.dev.vars.example` to `.dev.vars`, configure the relay token, and keep `MOCK_OPENAI=false`.
 
 To use the Cloudflare runtime locally instead:
 
@@ -68,8 +68,8 @@ The checked-in `frontend/config.js` points local hosts at `http://127.0.0.1:8787
 ## Production setup
 
 1. Upload the complete `server/` directory to the QCRI server and follow [`server/README.md`](server/README.md). It does not depend on another website or server project.
-2. Set `LLM_RELAY_BASE_URL`, `LLM_RELAY_TOKEN`, `EXPERT_ACCESS_CODES`, and `TOKEN_SECRET` with `wrangler secret put`. With the shared-domain gateway, the relay URL is `https://polka-evasive-pleat.ngrok-free.dev/simulator-evaluation-relay/api`. `LLM_RELAY_TOKEN` must match the standalone server's `RELAY_TOKEN`. `EXPERT_ACCESS_CODES` is a JSON object whose keys are participant codes and whose values are their distinct access codes.
-3. Set `PARTICIPANT_CODES`, `PROFILE_ASSIGNMENTS`, `ALLOWED_ORIGINS`, and `OPENAI_MODEL` in `wrangler.toml`.
+2. Set `LLM_RELAY_BASE_URL`, `LLM_RELAY_TOKEN`, `EXPERT_ACCESS_CODES`, and `TOKEN_SECRET` with `wrangler secret put`. With the shared-domain gateway, the relay URL is `https://polka-evasive-pleat.ngrok-free.dev/simulator-evaluation-relay/api`. `LLM_RELAY_TOKEN` must match the standalone server's `RELAY_TOKEN`. `EXPERT_ACCESS_CODES` maps cohort identifiers to access codes; a cohort code may be reused by multiple experts because each expert's identity and progress are stored under their normalized email address.
+3. Set `PARTICIPANT_CODES`, `PROFILE_ASSIGNMENTS`, `SPLIT_PROFILE_ASSIGNMENTS`, `ALLOWED_ORIGINS`, and `OPENAI_MODEL` in `wrangler.toml`.
 4. Deploy with `npm run deploy` from `worker/`. The isolated SQLite-backed Durable Object is created by the `v1` migration and initializes its own schema.
 5. Put the deployed Worker URL in `frontend/config.js`, then publish `frontend/`.
 
@@ -80,12 +80,16 @@ The QCRI API relay calls the same project endpoint and `/chat/completions` route
 ## Study behavior
 
 - The same case is used for all three simulator sessions, enabling within-case comparison.
-- Expert 1 receives cases 1–20 and Expert 2 receives cases 21–40; API authorization prevents either expert from opening the other's cases.
+- Participants sign in with an email address and cohort access code. On first login they provide their full name, role or specialty, institution, latest degree, and years of clinical experience; returning participants skip this form.
+- The first cohort shares one access code. Each new email receives one unclaimed patient from cases 1–20, and its progress remains isolated under that email.
+- The second access code is restricted to one email and receives all ten cases 21–30.
+- Existing Durable Object studies, transcripts, and ratings are retained when participant-profile columns are added.
 - Simulator order is randomized server-side and only anonymous labels reach the browser.
 - Only one session can be active at a time.
 - The expert starts every conversation by sending the first message as the therapist.
 - A session moves to evaluation after 50 therapist-patient turns, when the expert ends it, or when either speaker gives a direct bye/goodbye farewell.
 - The expert proceeds to the next session only after all five ratings are submitted.
+- Signing out during an incomplete patient displays a reminder that all three simulator baselines and ratings must be finished. Browser navigation also triggers the browser's unsaved-work warning; messages and ratings already submitted remain stored.
 - Scores use a 1–5 anchored scale; comments are optional.
 - TOPAS builds a populated case profile deterministically, updates all 14 categorical dynamic-state dimensions before each reply, and then generates the patient utterance in a separate GPT-5.1 request.
 

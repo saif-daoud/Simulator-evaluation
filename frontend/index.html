@@ -26,12 +26,26 @@
           <div class="login-symbol" aria-hidden="true"><span></span><span></span><span></span></div>
           <p class="eyebrow">Expert study</p>
           <h1>Evaluate simulated patients</h1>
-          <p class="intro">Conduct a short CBT interaction as the therapist, then rate how convincingly the simulated patient behaved.</p>
+          <p class="intro">Conduct a CBT interaction as the therapist, then rate how convincingly the simulated patient behaved. Please complete all three simulator baselines and ratings for every patient assigned to you.</p>
           <form id="login-form">
-            <label>Participant code<input id="participant-code" autocomplete="username" maxlength="64" placeholder="e.g. EXPERT-0001" required /></label>
+            <label>Email address<input id="email-address" type="email" autocomplete="email" maxlength="254" required /></label>
             <label>Study access code<input id="access-code" type="password" autocomplete="current-password" required /></label>
             <p class="error hidden" id="login-error" role="alert"></p>
             <button class="primary-button" id="login-button" type="submit">Enter the study <span aria-hidden="true">→</span></button>
+          </form>
+          <form class="participant-form hidden" id="participant-form">
+            <p class="participant-note"><strong>Participant details</strong> These details will be stored with your study responses.</p>
+            <label class="full-span">Email address<input id="participant-email" type="email" disabled /></label>
+            <label>Full name<input id="participant-name" autocomplete="name" maxlength="160" required /></label>
+            <label>Role or specialty<input id="participant-role" maxlength="200" required /></label>
+            <label>Institution<input id="participant-institution" maxlength="260" required /></label>
+            <label>Latest degree<input id="participant-degree" maxlength="160" required /></label>
+            <label class="full-span">Years of clinical experience<input id="participant-experience" type="number" min="0" max="80" step="1" required /></label>
+            <p class="error hidden full-span" id="participant-error" role="alert"></p>
+            <div class="participant-actions full-span">
+              <button class="text-button" id="participant-back-button" type="button">Back</button>
+              <button class="primary-button" id="participant-button" type="submit">Continue to the study <span aria-hidden="true">→</span></button>
+            </div>
           </form>
         </article>
       </section>
@@ -41,7 +55,7 @@
           <div>
             <p class="eyebrow">Patient simulator study</p>
             <h1>Select a case</h1>
-            <p class="hero-copy">Each case contains three simulator sessions. You will see one at a time and rate it before proceeding to the next session.</p>
+            <p class="hero-copy" id="assignment-copy">Each case contains three simulator sessions. Complete and rate all three before leaving that patient.</p>
           </div>
           <div class="study-key" aria-label="Study steps">
             <span><b>1</b> Read case</span><i></i><span><b>2</b> Conduct session</span><i></i><span><b>3</b> Rate patient</span>
@@ -50,7 +64,7 @@
 
         <aside class="role-banner">
           <div class="role-icon" aria-hidden="true">Rx</div>
-          <div><strong>You are the therapist.</strong><p>Respond as you would in a CBT session and end when you have enough evidence to score the simulator.</p></div>
+          <div><strong>Complete every baseline for a patient you begin.</strong><p>Finish all three simulator sessions and submit all three ratings before leaving the study.</p></div>
         </aside>
 
         <div class="profile-grid" id="profile-grid" aria-live="polite"></div>

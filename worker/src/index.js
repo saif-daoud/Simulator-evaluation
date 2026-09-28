@@ -76,9 +76,13 @@ async function secureEqual(left, right) {
   return byteEqual(await digest(left), await digest(right));
 }
 
-async function makeToken(env, participantCode) {
+async function makeToken(env, participantCode, cohortCode) {
   if (!env.TOKEN_SECRET) throw new Error("TOKEN_SECRET is not configured");
-  const payload = base64UrlEncode(new TextEncoder().encode(JSON.stringify({ participant_code: participantCode, exp: Date.now() + TOKEN_TTL_MS })));
+  const payload = base64UrlEncode(new TextEncoder().encode(JSON.stringify({
+    participant_code: participantCode,
+    cohort_code: cohortCode,
+    exp: Date.now() + TOKEN_TTL_MS
+  })));
   return `${payload}.${base64UrlEncode(await hmac(env.TOKEN_SECRET, payload))}`;
 }
 
@@ -89,7 +93,7 @@ async function verifyToken(env, token) {
   const expected = await hmac(env.TOKEN_SECRET, payload);
   if (!byteEqual(expected, base64UrlDecode(signature))) throw new Error("Invalid token");
   const parsed = JSON.parse(new TextDecoder().decode(base64UrlDecode(payload)));
-  if (!parsed.participant_code || Date.now() > Number(parsed.exp || 0)) throw new Error("Expired token");
+  if (!parsed.participant_code || !parsed.cohort_code || Date.now() > Number(parsed.exp || 0)) throw new Error("Expired token");
   return parsed;
 }
 
@@ -97,7 +101,10 @@ async function authenticatedParticipant(request, env) {
   const header = request.headers.get("Authorization") || "";
   if (!header.startsWith("Bearer ")) throw new Error("Missing authorization");
   const payload = await verifyToken(env, header.slice(7));
-  return String(payload.participant_code);
+  return {
+    participant_code: String(payload.participant_code),
+    cohort_code: String(payload.cohort_code).toUpperCase()
+  };
 }
 
 export function sanitizeText(value, maxLength) {
@@ -195,38 +202,148 @@ function participantAllowed(env, participantCode) {
   return participantCodes(env).includes(participantCode.toUpperCase());
 }
 
-function accessCodeForParticipant(env, participantCode) {
+function normalizeEmail(value) {
+  return sanitizeText(value, 254).toLowerCase();
+}
+
+function validEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function publicParticipant(participant) {
+  return {
+    email: participant.email,
+    name: participant.name,
+    role: participant.role,
+    institution: participant.institution,
+    latest_degree: participant.latest_degree,
+    years_experience: Number(participant.years_experience)
+  };
+}
+
+function validateParticipantProfile(value) {
+  const profile = {
+    name: sanitizeText(value?.name, 120),
+    role: sanitizeText(value?.role, 160),
+    institution: sanitizeText(value?.institution, 200),
+    latest_degree: sanitizeText(value?.latest_degree, 160),
+    years_experience: Number(value?.years_experience)
+  };
+  if (!profile.name || !profile.role || !profile.institution || !profile.latest_degree) {
+    throw new Error("Complete every professional profile field.");
+  }
+  if (!Number.isInteger(profile.years_experience) || profile.years_experience < 0 || profile.years_experience > 80) {
+    throw new Error("Years of clinical experience must be between 0 and 80.");
+  }
+  return profile;
+}
+
+async function participantCodeForEmail(email) {
+  const bytes = await digest(email);
+  return `P-${[...bytes].slice(0, 16).map(value => value.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function configuredAccessCodes(env) {
   const configured = String(env.EXPERT_ACCESS_CODES || "").trim();
   if (configured) {
     try {
       const codes = JSON.parse(configured);
-      return String(codes?.[participantCode.toUpperCase()] || "");
+      return codes && !Array.isArray(codes) && typeof codes === "object" ? codes : {};
     } catch {
-      return "";
+      return {};
     }
   }
-  return String(env.STUDY_ACCESS_CODE || "");
+  const fallback = String(env.STUDY_ACCESS_CODE || "");
+  return Object.fromEntries(participantCodes(env).map(code => [code, fallback]));
 }
 
-export function assignedProfiles(env, participantCode) {
+async function cohortForAccessCode(env, accessCode) {
+  for (const [cohortCode, configuredCode] of Object.entries(configuredAccessCodes(env))) {
+    if (participantAllowed(env, cohortCode) && configuredCode && await secureEqual(accessCode, String(configuredCode))) {
+      return cohortCode.toUpperCase();
+    }
+  }
+  return "";
+}
+
+function assignmentRange(env, cohortCode) {
   const configured = String(env.PROFILE_ASSIGNMENTS || "").trim();
-  if (!configured) return [...PROFILES];
-  const normalizedParticipant = participantCode.toUpperCase();
+  if (!configured) return { start: 1, end: PROFILES.length };
+  const normalizedCohort = cohortCode.toUpperCase();
   const assignment = configured
     .split(",")
     .map(value => value.trim())
     .filter(Boolean)
     .map(value => value.match(/^([^:]+):(\d+)-(\d+)$/))
-    .find(match => match?.[1].trim().toUpperCase() === normalizedParticipant);
-  if (!assignment) return [];
+    .find(match => match?.[1].trim().toUpperCase() === normalizedCohort);
+  if (!assignment) return null;
   const start = Number(assignment[2]);
   const end = Number(assignment[3]);
-  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start) return [];
-  return PROFILES.filter(profile => profile.display_number >= start && profile.display_number <= end);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start) return null;
+  return { start, end };
 }
 
-function profileAssigned(env, participantCode, profileId) {
-  return assignedProfiles(env, participantCode).some(profile => profile.id === profileId);
+function splitAssignmentCodes(env) {
+  return String(env.SPLIT_PROFILE_ASSIGNMENTS || "")
+    .split(",")
+    .map(value => value.trim().toUpperCase())
+    .filter(Boolean);
+}
+
+async function allocateAssignment(env, cohortCode) {
+  const range = assignmentRange(env, cohortCode);
+  if (!range) throw new Error("No patient assignment is configured for this access code.");
+  if (!splitAssignmentCodes(env).includes(cohortCode)) {
+    const existing = await env.DB.prepare(
+      "SELECT participant_code FROM participants WHERE cohort_code = ? AND email IS NOT NULL AND email != '' LIMIT 1"
+    ).bind(cohortCode).first();
+    if (existing) throw new Error("This access code is already registered to an email address.");
+    return range;
+  }
+  const assigned = await env.DB.prepare(
+    `SELECT assignment_start FROM participants
+      WHERE cohort_code = ? AND email IS NOT NULL AND email != ''
+        AND assignment_start = assignment_end
+        AND assignment_start BETWEEN ? AND ?`
+  ).bind(cohortCode, range.start, range.end).all();
+  const used = new Set((assigned.results || []).map(row => Number(row.assignment_start)));
+  for (let profileNumber = range.start; profileNumber <= range.end; profileNumber += 1) {
+    if (!used.has(profileNumber)) return { start: profileNumber, end: profileNumber };
+  }
+  throw new Error("All patient assignments for this access code have already been claimed.");
+}
+
+async function loadParticipant(env, participantCode) {
+  return env.DB.prepare(
+    `SELECT participant_code, email, cohort_code, assignment_start, assignment_end,
+            name, role, institution, latest_degree, years_experience, profile_completed
+       FROM participants WHERE participant_code = ?`
+  ).bind(participantCode).first();
+}
+
+async function requireParticipant(request, env) {
+  const identity = await authenticatedParticipant(request, env);
+  if (!participantAllowed(env, identity.cohort_code)) throw new Error("Unknown cohort");
+  const participant = await loadParticipant(env, identity.participant_code);
+  if (!participant || participant.cohort_code !== identity.cohort_code || Number(participant.profile_completed) !== 1) {
+    throw new Error("Unknown participant");
+  }
+  return participant;
+}
+
+export function assignedProfiles(env, participant) {
+  const range = typeof participant === "string"
+    ? assignmentRange(env, participant)
+    : {
+        start: Number(participant?.assignment_start),
+        end: Number(participant?.assignment_end)
+      };
+  if (!range || !Number.isInteger(range.start) || !Number.isInteger(range.end)) return [];
+  return PROFILES.filter(profile => profile.display_number >= range.start && profile.display_number <= range.end);
+}
+
+function profileAssigned(env, participant, profileId) {
+  return assignedProfiles(env, participant).some(profile => profile.id === profileId);
 }
 
 async function studyOwner(env, studyId, participantCode) {
@@ -235,16 +352,16 @@ async function studyOwner(env, studyId, participantCode) {
     .first();
 }
 
-async function sessionOwner(env, sessionId, participantCode) {
+async function sessionOwner(env, sessionId, participant) {
   const session = await env.DB.prepare(
     `SELECT ss.*, s.participant_code, s.profile_id, s.status AS study_status
        FROM simulator_sessions ss
        JOIN studies s ON s.id = ss.study_id
       WHERE ss.id = ? AND s.participant_code = ?`
-  ).bind(sessionId, participantCode).first();
+  ).bind(sessionId, participant.participant_code).first();
   return session
     && SIMULATOR_KEYS.includes(session.simulator_key)
-    && profileAssigned(env, participantCode, session.profile_id)
+    && profileAssigned(env, participant, session.profile_id)
     ? session
     : null;
 }
@@ -342,22 +459,74 @@ async function listMessages(env, sessionId) {
 
 async function handleLogin(request, env, headers) {
   const body = await parseBody(request);
-  const participantCode = sanitizeText(body.participant_code, 64).toUpperCase();
+  const email = normalizeEmail(body.email);
   const accessCode = String(body.access_code || "");
-  if (!participantCode || !accessCode) return responseJson({ error: "Enter both study codes." }, 400, headers);
-  const expectedAccessCode = accessCodeForParticipant(env, participantCode);
-  if (!participantAllowed(env, participantCode) || !expectedAccessCode || !(await secureEqual(accessCode, expectedAccessCode))) {
-    return responseJson({ error: "The participant or access code is not valid." }, 403, headers);
-  }
+  if (!validEmail(email) || !accessCode) return responseJson({ error: "Enter a valid email address and the study access code." }, 400, headers);
+  const cohortCode = await cohortForAccessCode(env, accessCode);
+  if (!cohortCode) return responseJson({ error: "The email or access code is not valid." }, 403, headers);
   const timestamp = now();
-  await env.DB.prepare(
-    `INSERT INTO participants (participant_code, created_at, last_seen_at) VALUES (?, ?, ?)
-     ON CONFLICT(participant_code) DO UPDATE SET last_seen_at = excluded.last_seen_at`
-  ).bind(participantCode, timestamp, timestamp).run();
-  return responseJson({ token: await makeToken(env, participantCode), participant_code: participantCode }, 200, headers);
+  let participant = await env.DB.prepare(
+    `SELECT participant_code, email, cohort_code, assignment_start, assignment_end,
+            name, role, institution, latest_degree, years_experience, profile_completed
+       FROM participants WHERE lower(email) = ?`
+  ).bind(email).first();
+  if (participant && participant.cohort_code !== cohortCode) {
+    return responseJson({ error: "This email is registered with a different study access code." }, 403, headers);
+  }
+  if (!participant) {
+    let allocation;
+    try {
+      allocation = await allocateAssignment(env, cohortCode);
+    } catch (error) {
+      return responseJson({ error: error.message }, 409, headers);
+    }
+    const participantCode = await participantCodeForEmail(email);
+    await env.DB.prepare(
+      `INSERT INTO participants
+       (participant_code, email, cohort_code, assignment_start, assignment_end, profile_completed, created_at, last_seen_at)
+       VALUES (?, ?, ?, ?, ?, 0, ?, ?)`
+    ).bind(participantCode, email, cohortCode, allocation.start, allocation.end, timestamp, timestamp).run();
+    participant = {
+      participant_code: participantCode,
+      email,
+      cohort_code: cohortCode,
+      assignment_start: allocation.start,
+      assignment_end: allocation.end,
+      profile_completed: 0
+    };
+  } else {
+    await env.DB.prepare("UPDATE participants SET last_seen_at = ? WHERE participant_code = ?")
+      .bind(timestamp, participant.participant_code).run();
+  }
+  return responseJson({
+    token: await makeToken(env, participant.participant_code, cohortCode),
+    email,
+    profile_required: Number(participant.profile_completed) !== 1,
+    profile: Number(participant.profile_completed) === 1 ? publicParticipant(participant) : null
+  }, 200, headers);
 }
 
-async function handleBootstrap(env, participantCode, headers) {
+async function handleParticipantProfile(request, env, participant, headers) {
+  const body = await parseBody(request);
+  let profile;
+  try {
+    profile = validateParticipantProfile(body);
+  } catch (error) {
+    return responseJson({ error: error.message }, 400, headers);
+  }
+  await env.DB.prepare(
+    `UPDATE participants
+        SET name = ?, role = ?, institution = ?, latest_degree = ?, years_experience = ?,
+            profile_completed = 1, last_seen_at = ?
+      WHERE participant_code = ? AND cohort_code = ?`
+  ).bind(
+    profile.name, profile.role, profile.institution, profile.latest_degree, profile.years_experience, now(),
+    participant.participant_code, participant.cohort_code
+  ).run();
+  return responseJson({ saved: true, profile: { email: participant.email, ...profile } }, 200, headers);
+}
+
+async function handleBootstrap(env, participant, headers) {
   const result = await env.DB.prepare(
     `SELECT s.id, s.profile_id, s.status,
              SUM(CASE WHEN ss.status = 'completed' AND ss.simulator_key IN ('patient_psi', 'patient_act', 'topas') THEN 1 ELSE 0 END) AS completed_sessions
@@ -366,22 +535,25 @@ async function handleBootstrap(env, participantCode, headers) {
       WHERE s.participant_code = ?
       GROUP BY s.id, s.profile_id, s.status
       ORDER BY s.created_at`
-  ).bind(participantCode).all();
-  const profiles = assignedProfiles(env, participantCode);
+  ).bind(participant.participant_code).all();
+  const profiles = assignedProfiles(env, participant);
   const assignedIds = new Set(profiles.map(profile => profile.id));
   return responseJson({
     profiles: profiles.map(publicProfile),
     studies: (result.results || [])
       .filter(row => assignedIds.has(row.profile_id))
-      .map(row => ({ ...row, completed_sessions: Number(row.completed_sessions || 0) }))
+      .map(row => ({ ...row, completed_sessions: Number(row.completed_sessions || 0) })),
+    participant: publicParticipant(participant),
+    required_patients: profiles.length
   }, 200, headers);
 }
 
-async function handleStartStudy(request, env, participantCode, headers) {
+async function handleStartStudy(request, env, participant, headers) {
+  const participantCode = participant.participant_code;
   const body = await parseBody(request);
   const profileId = sanitizeText(body.profile_id, 32);
   if (!PROFILE_BY_ID.has(profileId)) return responseJson({ error: "Unknown case." }, 404, headers);
-  if (!profileAssigned(env, participantCode, profileId)) return responseJson({ error: "This case is not assigned to this expert." }, 403, headers);
+  if (!profileAssigned(env, participant, profileId)) return responseJson({ error: "This case is not assigned to this expert." }, 403, headers);
   const existing = await env.DB.prepare("SELECT * FROM studies WHERE participant_code = ? AND profile_id = ?")
     .bind(participantCode, profileId)
     .first();
@@ -413,17 +585,19 @@ async function handleStartStudy(request, env, participantCode, headers) {
   return responseJson({ study: await serializeStudy(env, study) }, 201, headers);
 }
 
-async function handleGetStudy(request, env, participantCode, headers) {
+async function handleGetStudy(request, env, participant, headers) {
+  const participantCode = participant.participant_code;
   const body = await parseBody(request);
   const study = await studyOwner(env, sanitizeText(body.study_id, 64), participantCode);
   if (!study) return responseJson({ error: "Study not found." }, 404, headers);
-  if (!profileAssigned(env, participantCode, study.profile_id)) return responseJson({ error: "Study not found." }, 404, headers);
+  if (!profileAssigned(env, participant, study.profile_id)) return responseJson({ error: "Study not found." }, 404, headers);
   return responseJson({ study: await serializeStudy(env, study) }, 200, headers);
 }
 
-async function handleStartSession(request, env, participantCode, headers) {
+async function handleStartSession(request, env, participant, headers) {
+  const participantCode = participant.participant_code;
   const body = await parseBody(request);
-  const session = await sessionOwner(env, sanitizeText(body.session_id, 64), participantCode);
+  const session = await sessionOwner(env, sanitizeText(body.session_id, 64), participant);
   if (!session) return responseJson({ error: "Session not found." }, 404, headers);
   if (session.status === "active") {
     const study = await studyOwner(env, session.study_id, participantCode);
@@ -444,9 +618,10 @@ async function handleStartSession(request, env, participantCode, headers) {
   return responseJson({ study: await serializeStudy(env, study) }, 200, headers);
 }
 
-async function handleMessage(request, env, participantCode, headers) {
+async function handleMessage(request, env, participant, headers) {
+  const participantCode = participant.participant_code;
   const body = await parseBody(request);
-  const session = await sessionOwner(env, sanitizeText(body.session_id, 64), participantCode);
+  const session = await sessionOwner(env, sanitizeText(body.session_id, 64), participant);
   if (!session) return responseJson({ error: "Session not found." }, 404, headers);
   if (session.status !== "active") return responseJson({ error: "This conversation is not active." }, 409, headers);
   const content = sanitizeText(body.content, 4000);
@@ -515,9 +690,10 @@ async function handleMessage(request, env, participantCode, headers) {
   return responseJson({ study: await serializeStudy(env, study) }, 200, headers);
 }
 
-async function handleEndSession(request, env, participantCode, headers) {
+async function handleEndSession(request, env, participant, headers) {
+  const participantCode = participant.participant_code;
   const body = await parseBody(request);
-  const session = await sessionOwner(env, sanitizeText(body.session_id, 64), participantCode);
+  const session = await sessionOwner(env, sanitizeText(body.session_id, 64), participant);
   if (!session) return responseJson({ error: "Session not found." }, 404, headers);
   if (["rating", "completed"].includes(session.status)) {
     const study = await studyOwner(env, session.study_id, participantCode);
@@ -538,9 +714,10 @@ async function handleEndSession(request, env, participantCode, headers) {
   return responseJson({ study: await serializeStudy(env, study) }, 200, headers);
 }
 
-async function handleRating(request, env, participantCode, headers) {
+async function handleRating(request, env, participant, headers) {
+  const participantCode = participant.participant_code;
   const body = await parseBody(request);
-  const session = await sessionOwner(env, sanitizeText(body.session_id, 64), participantCode);
+  const session = await sessionOwner(env, sanitizeText(body.session_id, 64), participant);
   if (!session) return responseJson({ error: "Session not found." }, 404, headers);
   const existing = await env.DB.prepare("SELECT id FROM simulator_ratings WHERE session_id = ?").bind(session.id).first();
   if (existing) {
@@ -605,22 +782,34 @@ async function router(request, env) {
   if (request.method !== "POST") return responseJson({ error: "Method not allowed." }, 405, headers);
   if (path === "/api/auth/login") return handleLogin(request, env, headers);
 
-  let participantCode;
+  let authentication;
   try {
-    participantCode = await authenticatedParticipant(request, env);
+    authentication = await authenticatedParticipant(request, env);
   } catch {
     return responseJson({ error: "Your study session is not valid." }, 401, headers);
   }
-  if (!participantAllowed(env, participantCode)) {
+  if (!participantAllowed(env, authentication.cohort_code)) {
     return responseJson({ error: "Your study session is not valid." }, 401, headers);
   }
-  if (path === "/api/bootstrap") return handleBootstrap(env, participantCode, headers);
-  if (path === "/api/studies/start") return handleStartStudy(request, env, participantCode, headers);
-  if (path === "/api/study") return handleGetStudy(request, env, participantCode, headers);
-  if (path === "/api/sessions/start") return handleStartSession(request, env, participantCode, headers);
-  if (path === "/api/sessions/message") return handleMessage(request, env, participantCode, headers);
-  if (path === "/api/sessions/end") return handleEndSession(request, env, participantCode, headers);
-  if (path === "/api/sessions/rate") return handleRating(request, env, participantCode, headers);
+  const participant = await env.DB.prepare(
+    `SELECT participant_code, email, cohort_code, assignment_start, assignment_end,
+            name, role, institution, latest_degree, years_experience, profile_completed
+       FROM participants WHERE participant_code = ?`
+  ).bind(authentication.participant_code).first();
+  if (!participant || participant.cohort_code !== authentication.cohort_code) {
+    return responseJson({ error: "Your study session is not valid." }, 401, headers);
+  }
+  if (path === "/api/auth/profile") return handleParticipantProfile(request, env, participant, headers);
+  if (Number(participant.profile_completed) !== 1) {
+    return responseJson({ error: "Complete your participant details before beginning the study." }, 409, headers);
+  }
+  if (path === "/api/bootstrap") return handleBootstrap(env, participant, headers);
+  if (path === "/api/studies/start") return handleStartStudy(request, env, participant, headers);
+  if (path === "/api/study") return handleGetStudy(request, env, participant, headers);
+  if (path === "/api/sessions/start") return handleStartSession(request, env, participant, headers);
+  if (path === "/api/sessions/message") return handleMessage(request, env, participant, headers);
+  if (path === "/api/sessions/end") return handleEndSession(request, env, participant, headers);
+  if (path === "/api/sessions/rate") return handleRating(request, env, participant, headers);
   return responseJson({ error: "Not found." }, 404, headers);
 }
 

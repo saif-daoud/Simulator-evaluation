@@ -27,16 +27,18 @@ test("the three requested simulators are configured", () => {
   assert.equal(MAX_THERAPIST_TURNS, 50);
 });
 
-test("the two experts receive distinct sets of 20 profiles", () => {
-  const env = { PROFILE_ASSIGNMENTS: "EXPERT-5136:1-20,EXPERT-8427:21-40" };
+test("the shared first cohort and second expert receive the configured profile pools", () => {
+  const env = { PROFILE_ASSIGNMENTS: "EXPERT-5136:1-20,EXPERT-8427:21-30" };
   const first = assignedProfiles(env, "expert-5136");
   const second = assignedProfiles(env, "EXPERT-8427");
+  const referredExpert = assignedProfiles(env, { assignment_start: 7, assignment_end: 7 });
   assert.equal(PROFILES.length, 40);
   assert.equal(first.length, 20);
-  assert.equal(second.length, 20);
+  assert.equal(second.length, 10);
+  assert.deepEqual(referredExpert.map(profile => profile.display_number), [7]);
   assert.equal(first.some(profile => second.some(other => other.id === profile.id)), false);
   assert.deepEqual(first.map(profile => profile.display_number), Array.from({ length: 20 }, (_, index) => index + 1));
-  assert.deepEqual(second.map(profile => profile.display_number), Array.from({ length: 20 }, (_, index) => index + 21));
+  assert.deepEqual(second.map(profile => profile.display_number), Array.from({ length: 10 }, (_, index) => index + 21));
 });
 
 test("farewell detection matches the simulation pipeline", () => {

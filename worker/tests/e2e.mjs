@@ -68,7 +68,8 @@ const env = {
   DB,
   ALLOWED_ORIGINS: "http://127.0.0.1:5500",
   PARTICIPANT_CODES: "EXPERT-5136,EXPERT-8427",
-  PROFILE_ASSIGNMENTS: "EXPERT-5136:1-20,EXPERT-8427:21-40",
+  PROFILE_ASSIGNMENTS: "EXPERT-5136:1-20,EXPERT-8427:21-30",
+  SPLIT_PROFILE_ASSIGNMENTS: "EXPERT-5136",
   EXPERT_ACCESS_CODES: JSON.stringify({
     "EXPERT-5136": "LOCAL-EXPERT-5136",
     "EXPERT-8427": "LOCAL-EXPERT-8427"
@@ -101,20 +102,40 @@ async function call(pathname, body, token = "") {
   return payload;
 }
 
-const login = await call("/api/auth/login", { participant_code: "EXPERT-5136", access_code: "LOCAL-EXPERT-5136" });
+async function register(email, accessCode) {
+  const login = await call("/api/auth/login", { email, access_code: accessCode });
+  assert.equal(login.email, email);
+  assert.equal(login.profile_required, true);
+  await call("/api/auth/profile", {
+    name: "Dr Test Expert",
+    role: "Clinical psychologist",
+    institution: "Test Institute",
+    latest_degree: "PhD",
+    years_experience: 12
+  }, login.token);
+  const resumed = await call("/api/auth/login", { email, access_code: accessCode });
+  assert.equal(resumed.profile_required, false);
+  return resumed;
+}
+
+const login = await register("referral-one@example.org", "LOCAL-EXPERT-5136");
 const token = login.token;
 const bootstrap = await call("/api/bootstrap", {}, token);
-assert.equal(bootstrap.profiles.length, 20);
-assert.deepEqual(bootstrap.profiles.map(profile => profile.id), Array.from({ length: 20 }, (_, index) => `case-${String(index + 1).padStart(2, "0")}`));
+assert.equal(bootstrap.profiles.length, 1);
+assert.deepEqual(bootstrap.profiles.map(profile => profile.id), ["case-01"]);
 assert.equal(JSON.stringify(bootstrap).includes("simulator_key"), false);
 
-const secondLogin = await call("/api/auth/login", { participant_code: "EXPERT-8427", access_code: "LOCAL-EXPERT-8427" });
+const referredLogin = await register("referral-two@example.org", "LOCAL-EXPERT-5136");
+const referredBootstrap = await call("/api/bootstrap", {}, referredLogin.token);
+assert.deepEqual(referredBootstrap.profiles.map(profile => profile.id), ["case-02"]);
+
+const secondLogin = await register("second-expert@example.org", "LOCAL-EXPERT-8427");
 const secondBootstrap = await call("/api/bootstrap", {}, secondLogin.token);
-assert.equal(secondBootstrap.profiles.length, 20);
-assert.deepEqual(secondBootstrap.profiles.map(profile => profile.id), Array.from({ length: 20 }, (_, index) => `case-${String(index + 21).padStart(2, "0")}`));
+assert.equal(secondBootstrap.profiles.length, 10);
+assert.deepEqual(secondBootstrap.profiles.map(profile => profile.id), Array.from({ length: 10 }, (_, index) => `case-${String(index + 21).padStart(2, "0")}`));
 assert.equal(bootstrap.profiles.some(profile => secondBootstrap.profiles.some(other => other.id === profile.id)), false);
 
-const crossedCode = await requestApi("/api/auth/login", { participant_code: "EXPERT-5136", access_code: "LOCAL-EXPERT-8427" });
+const crossedCode = await requestApi("/api/auth/login", { email: "referral-one@example.org", access_code: "LOCAL-EXPERT-8427" });
 assert.equal(crossedCode.response.status, 403);
 const crossedCase = await requestApi("/api/studies/start", { profile_id: "case-21" }, token);
 assert.equal(crossedCase.response.status, 403);
@@ -173,16 +194,17 @@ assert.equal(Number(ratings.count), 3);
 const methods = await DB.prepare("SELECT COUNT(DISTINCT simulator_key) AS count FROM simulator_sessions").first();
 assert.equal(Number(methods.count), 3);
 
-({ study } = await call("/api/studies/start", { profile_id: "case-02" }, token));
+const referredToken = referredLogin.token;
+({ study } = await call("/api/studies/start", { profile_id: "case-02" }, referredToken));
 const cappedSession = study.sessions[0];
-({ study } = await call("/api/sessions/start", { session_id: cappedSession.id, client_request_id: "start-capped" }, token));
+({ study } = await call("/api/sessions/start", { session_id: cappedSession.id, client_request_id: "start-capped" }, referredToken));
 assert.equal(study.sessions[0].messages.length, 0);
 for (let turn = 1; turn <= 50; turn += 1) {
   ({ study } = await call("/api/sessions/message", {
     session_id: cappedSession.id,
     content: `This is therapist turn ${turn}. Please continue.`,
     client_message_id: `capped-message-${turn}`
-  }, token));
+  }, referredToken));
   assert.equal(study.sessions[0].status, turn === 50 ? "rating" : "active");
 }
 assert.equal(study.sessions[0].termination_reason, "max_turns");

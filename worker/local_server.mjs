@@ -92,6 +92,28 @@ class D1DatabaseShim {
 loadLocalVars();
 const DB = new D1DatabaseShim(localDatabasePath);
 DB.exec(fs.readFileSync(path.join(workerRoot, "schema.sql"), "utf8"));
+const participantColumns = new Set(DB.database.prepare("PRAGMA table_info(participants)").all().map(column => column.name));
+for (const [name, definition] of [
+  ["email", "TEXT"],
+  ["cohort_code", "TEXT"],
+  ["assignment_start", "INTEGER"],
+  ["assignment_end", "INTEGER"],
+  ["name", "TEXT NOT NULL DEFAULT ''"],
+  ["role", "TEXT NOT NULL DEFAULT ''"],
+  ["institution", "TEXT NOT NULL DEFAULT ''"],
+  ["latest_degree", "TEXT NOT NULL DEFAULT ''"],
+  ["years_experience", "INTEGER"],
+  ["profile_completed", "INTEGER NOT NULL DEFAULT 0 CHECK (profile_completed IN (0, 1))"]
+]) {
+  if (!participantColumns.has(name)) DB.database.exec(`ALTER TABLE participants ADD COLUMN ${name} ${definition}`);
+}
+DB.database.exec(`
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_email
+    ON participants(email) WHERE email IS NOT NULL AND email != '';
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_assignment
+    ON participants(cohort_code, assignment_start, assignment_end)
+    WHERE email IS NOT NULL AND email != '';
+`);
 
 const openAiKey = process.env.OPENAI_API_KEY || "";
 const azureOpenAiKey = process.env.AZURE_OPENAI_API_KEY || "";
@@ -100,7 +122,8 @@ const env = {
   DB,
   ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS || `http://${host}:${port},http://localhost:${port}`,
   PARTICIPANT_CODES: process.env.PARTICIPANT_CODES || "EXPERT-5136,EXPERT-8427",
-  PROFILE_ASSIGNMENTS: process.env.PROFILE_ASSIGNMENTS || "EXPERT-5136:1-20,EXPERT-8427:21-40",
+  PROFILE_ASSIGNMENTS: process.env.PROFILE_ASSIGNMENTS || "EXPERT-5136:1-20,EXPERT-8427:21-30",
+  SPLIT_PROFILE_ASSIGNMENTS: process.env.SPLIT_PROFILE_ASSIGNMENTS || "EXPERT-5136",
   EXPERT_ACCESS_CODES: process.env.EXPERT_ACCESS_CODES || JSON.stringify({
     "EXPERT-5136": "LOCAL-EXPERT-5136",
     "EXPERT-8427": "LOCAL-EXPERT-8427"
@@ -172,7 +195,7 @@ const server = http.createServer(async (request, response) => {
 server.listen(port, host, () => {
   const responseMode = String(env.MOCK_OPENAI).toLowerCase() === "true" ? "mock responses" : env.OPENAI_MODEL;
   console.log(`CBT simulator evaluation: http://${host}:${port}`);
-  console.log("Local logins: EXPERT-5136 / LOCAL-EXPERT-5136 and EXPERT-8427 / LOCAL-EXPERT-8427");
+  console.log("Local access codes: LOCAL-EXPERT-5136 (shared referrals) and LOCAL-EXPERT-8427 (10-case expert)");
   console.log(`Patient response mode: ${responseMode}`);
   console.log(`Local database: ${localDatabasePath}`);
 });

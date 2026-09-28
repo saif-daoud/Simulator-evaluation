@@ -30,13 +30,19 @@ const ratingMetrics = [
 
 const scoreLabels = ["Poor", "Weak", "Acceptable", "Strong", "Excellent"];
 const totalSimulatorSessions = 3;
-const storage = { token: "sim-eval-token", participant: "sim-eval-participant" };
+const storage = {
+  token: "sim-eval-token",
+  participant: "sim-eval-participant",
+  profilePending: "sim-eval-profile-pending"
+};
 
 const state = {
   token: sessionStorage.getItem(storage.token) || "",
   participant: sessionStorage.getItem(storage.participant) || "",
+  profilePending: sessionStorage.getItem(storage.profilePending) === "1",
   profiles: [],
   studies: {},
+  requiredPatients: 0,
   study: null,
   view: "login",
   pending: false,
@@ -47,8 +53,9 @@ const $ = id => document.getElementById(id);
 const el = {
   views: [...document.querySelectorAll(".view")],
   home: $("home-link"), signOut: $("sign-out-button"),
-  loginForm: $("login-form"), participant: $("participant-code"), access: $("access-code"), loginButton: $("login-button"), loginError: $("login-error"),
-  profileGrid: $("profile-grid"), caseBack: $("case-back-button"), caseTitle: $("case-title"), caseCondition: $("case-condition"), caseCode: $("case-code"), caseSummary: $("case-summary"), caseContext: $("case-context"), caseHistory: $("case-history"), caseCoping: $("case-coping"), caseProgressCopy: $("case-progress-copy"), caseProgressBar: $("case-progress-bar"), sessionList: $("session-list"),
+  loginCard: document.querySelector(".login-card"), loginForm: $("login-form"), email: $("email-address"), access: $("access-code"), loginButton: $("login-button"), loginError: $("login-error"),
+  participantForm: $("participant-form"), participantEmail: $("participant-email"), participantName: $("participant-name"), participantRole: $("participant-role"), participantInstitution: $("participant-institution"), participantDegree: $("participant-degree"), participantExperience: $("participant-experience"), participantError: $("participant-error"), participantButton: $("participant-button"), participantBack: $("participant-back-button"),
+  assignmentCopy: $("assignment-copy"), profileGrid: $("profile-grid"), caseBack: $("case-back-button"), caseTitle: $("case-title"), caseCondition: $("case-condition"), caseCode: $("case-code"), caseSummary: $("case-summary"), caseContext: $("case-context"), caseHistory: $("case-history"), caseCoping: $("case-coping"), caseProgressCopy: $("case-progress-copy"), caseProgressBar: $("case-progress-bar"), sessionList: $("session-list"),
   sessionBack: $("session-back-button"), sessionPosition: $("session-position"), sessionTitle: $("session-title"), viewProfile: $("view-profile-button"), endSession: $("end-session-button"), turnCounter: $("turn-counter"), chatPatientLabel: $("chat-patient-label"), chatState: $("chat-state"), messages: $("messages"), typing: $("typing-row"), messageForm: $("message-form"), messageInput: $("message-input"), send: $("send-button"),
   ratingPosition: $("rating-position"), ratingProfile: $("rating-profile-button"), transcriptCount: $("transcript-count"), ratingTranscript: $("rating-transcript"), ratingForm: $("rating-form"), ratingItems: $("rating-items"), ratingComments: $("rating-comments"), ratingError: $("rating-error"), submitRating: $("submit-rating-button"),
   completeButton: $("complete-button"), dialog: $("profile-dialog"), dialogTitle: $("dialog-title"), dialogCondition: $("dialog-condition"), dialogSummary: $("dialog-summary"), dialogContext: $("dialog-context"), dialogHistory: $("dialog-history"), dialogCoping: $("dialog-coping"), closeDialog: $("close-dialog-button"), toast: $("toast")
@@ -98,7 +105,7 @@ async function checkHealth() {
 
 function handleError(error) {
   if (error.status === 401) {
-    signOut();
+    signOut(true);
     showToast("Your study session expired. Please sign in again.", true);
     return;
   }
@@ -112,16 +119,46 @@ function automaticTerminationNotice(session) {
   return "";
 }
 
-function signOut() {
+function hasIncompletePatient() {
+  return state.study?.status === "active"
+    || Object.values(state.studies).some(study => study?.status === "active");
+}
+
+function showParticipantForm(email = state.participant) {
+  state.profilePending = true;
+  sessionStorage.setItem(storage.profilePending, "1");
+  el.participantEmail.value = email;
+  el.loginForm.classList.add("hidden");
+  el.participantForm.classList.remove("hidden");
+  el.loginCard.classList.add("participant-step");
+  el.participantName.focus();
+}
+
+function showLoginForm() {
+  el.participantForm.classList.add("hidden");
+  el.loginForm.classList.remove("hidden");
+  el.loginCard.classList.remove("participant-step");
+}
+
+function signOut(force = false) {
+  if (!force && hasIncompletePatient() && !window.confirm(
+    "Your input for this patient is incomplete. Please finish the remaining simulator baseline(s) and submit their ratings before leaving."
+  )) return false;
   state.token = "";
   state.participant = "";
+  state.profilePending = false;
   state.profiles = [];
   state.studies = {};
+  state.requiredPatients = 0;
   state.study = null;
   sessionStorage.removeItem(storage.token);
   sessionStorage.removeItem(storage.participant);
+  sessionStorage.removeItem(storage.profilePending);
   el.access.value = "";
+  el.participantForm.reset();
+  showLoginForm();
   showView("login");
+  return true;
 }
 
 function fillList(node, values) {
@@ -162,7 +199,11 @@ async function loadDashboard() {
   try {
     const payload = await api("/api/bootstrap", { body: "{}" });
     state.profiles = payload.profiles;
+    state.requiredPatients = Number(payload.required_patients || payload.profiles.length);
     state.studies = Object.fromEntries((payload.studies || []).map(study => [study.profile_id, study]));
+    el.assignmentCopy.textContent = state.requiredPatients === 1
+      ? "You have one assigned patient. Complete and rate all three simulator baselines before leaving the patient."
+      : `You have ${state.requiredPatients} assigned patients. For every patient, complete and rate all three simulator baselines before moving on.`;
     renderProfileCards();
     showView("dashboard");
   } catch (error) {
@@ -511,13 +552,18 @@ el.loginForm.addEventListener("submit", async event => {
   try {
     const payload = await api("/api/auth/login", {
       public: true,
-      body: JSON.stringify({ participant_code: el.participant.value.trim(), access_code: el.access.value })
+      body: JSON.stringify({ email: el.email.value.trim(), access_code: el.access.value })
     });
     state.token = payload.token;
-    state.participant = payload.participant_code;
+    state.participant = payload.email;
     sessionStorage.setItem(storage.token, state.token);
     sessionStorage.setItem(storage.participant, state.participant);
-    await loadDashboard();
+    if (payload.profile_required) showParticipantForm(payload.email);
+    else {
+      state.profilePending = false;
+      sessionStorage.removeItem(storage.profilePending);
+      await loadDashboard();
+    }
   } catch (error) {
     el.loginError.textContent = error.message;
     el.loginError.classList.remove("hidden");
@@ -527,8 +573,39 @@ el.loginForm.addEventListener("submit", async event => {
   }
 });
 
+el.participantForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  if (state.pending) return;
+  state.pending = true;
+  el.participantError.classList.add("hidden");
+  el.participantButton.disabled = true;
+  try {
+    await api("/api/auth/profile", {
+      body: JSON.stringify({
+        name: el.participantName.value.trim(),
+        role: el.participantRole.value.trim(),
+        institution: el.participantInstitution.value.trim(),
+        latest_degree: el.participantDegree.value.trim(),
+        years_experience: Number(el.participantExperience.value)
+      })
+    });
+    state.profilePending = false;
+    sessionStorage.removeItem(storage.profilePending);
+    showLoginForm();
+    await loadDashboard();
+  } catch (error) {
+    el.participantError.textContent = error.message;
+    el.participantError.classList.remove("hidden");
+  } finally {
+    state.pending = false;
+    el.participantButton.disabled = false;
+  }
+});
+
+el.participantBack.addEventListener("click", () => signOut(true));
+
 el.home.addEventListener("click", event => { event.preventDefault(); if (state.token) loadDashboard(); });
-el.signOut.addEventListener("click", signOut);
+el.signOut.addEventListener("click", () => signOut());
 el.caseBack.addEventListener("click", loadDashboard);
 el.sessionBack.addEventListener("click", showCase);
 el.viewProfile.addEventListener("click", openProfileDialog);
@@ -548,13 +625,21 @@ el.messageInput.addEventListener("keydown", event => {
 el.ratingForm.addEventListener("submit", submitRating);
 el.completeButton.addEventListener("click", loadDashboard);
 
+window.addEventListener("beforeunload", event => {
+  if (!hasIncompletePatient()) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
+
 async function boot() {
   buildRatingForm();
   checkHealth();
   if (state.token) {
-    el.participant.value = state.participant;
-    await loadDashboard();
+    el.email.value = state.participant;
+    if (state.profilePending) showParticipantForm(state.participant);
+    else await loadDashboard();
   } else {
+    showLoginForm();
     showView("login");
   }
 }
