@@ -137,11 +137,11 @@ export function validateRatings(scores) {
   return result;
 }
 
-export function publicProfile(profile) {
+export function publicProfile(profile, displayNumber = profile.display_number) {
   return {
     id: profile.id,
-    display_number: profile.display_number,
-    display_name: profile.display_name,
+    display_number: displayNumber,
+    display_name: `Patient ${String(displayNumber).padStart(2, "0")}`,
     condition: profile.condition,
     short_description: profile.short_description,
     summary: profile.summary,
@@ -366,9 +366,11 @@ async function sessionOwner(env, sessionId, participant) {
     : null;
 }
 
-async function serializeStudy(env, studyRecord) {
+async function serializeStudy(env, studyRecord, participant) {
   const profile = PROFILE_BY_ID.get(studyRecord.profile_id);
   if (!profile) throw new Error("Study profile is unavailable");
+  const displayNumber = assignedProfiles(env, participant).findIndex(candidate => candidate.id === profile.id) + 1;
+  if (displayNumber < 1) throw new Error("Study profile is not assigned to this participant");
   const current = await env.DB.prepare(
     `SELECT id FROM simulator_sessions
       WHERE study_id = ? AND simulator_key IN (${SIMULATOR_PLACEHOLDERS})
@@ -424,7 +426,7 @@ async function serializeStudy(env, studyRecord) {
   return {
     id: studyRecord.id,
     status: studyRecord.status,
-    profile: publicProfile(profile),
+    profile: publicProfile(profile, displayNumber),
     completed_sessions: completedSessions,
     total_sessions: SIMULATOR_KEYS.length,
     sessions
@@ -539,7 +541,7 @@ async function handleBootstrap(env, participant, headers) {
   const profiles = assignedProfiles(env, participant);
   const assignedIds = new Set(profiles.map(profile => profile.id));
   return responseJson({
-    profiles: profiles.map(publicProfile),
+    profiles: profiles.map((profile, index) => publicProfile(profile, index + 1)),
     studies: (result.results || [])
       .filter(row => assignedIds.has(row.profile_id))
       .map(row => ({ ...row, completed_sessions: Number(row.completed_sessions || 0) })),
@@ -557,7 +559,7 @@ async function handleStartStudy(request, env, participant, headers) {
   const existing = await env.DB.prepare("SELECT * FROM studies WHERE participant_code = ? AND profile_id = ?")
     .bind(participantCode, profileId)
     .first();
-  if (existing) return responseJson({ study: await serializeStudy(env, existing) }, 200, headers);
+  if (existing) return responseJson({ study: await serializeStudy(env, existing, participant) }, 200, headers);
   const otherActive = await env.DB.prepare("SELECT id FROM studies WHERE participant_code = ? AND status = 'active' LIMIT 1")
     .bind(participantCode)
     .first();
@@ -582,7 +584,7 @@ async function handleStartStudy(request, env, participant, headers) {
   });
   await env.DB.batch(statements);
   const study = await studyOwner(env, studyId, participantCode);
-  return responseJson({ study: await serializeStudy(env, study) }, 201, headers);
+  return responseJson({ study: await serializeStudy(env, study, participant) }, 201, headers);
 }
 
 async function handleGetStudy(request, env, participant, headers) {
@@ -591,7 +593,7 @@ async function handleGetStudy(request, env, participant, headers) {
   const study = await studyOwner(env, sanitizeText(body.study_id, 64), participantCode);
   if (!study) return responseJson({ error: "Study not found." }, 404, headers);
   if (!profileAssigned(env, participant, study.profile_id)) return responseJson({ error: "Study not found." }, 404, headers);
-  return responseJson({ study: await serializeStudy(env, study) }, 200, headers);
+  return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
 }
 
 async function handleStartSession(request, env, participant, headers) {
@@ -601,7 +603,7 @@ async function handleStartSession(request, env, participant, headers) {
   if (!session) return responseJson({ error: "Session not found." }, 404, headers);
   if (session.status === "active") {
     const study = await studyOwner(env, session.study_id, participantCode);
-    return responseJson({ study: await serializeStudy(env, study) }, 200, headers);
+    return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
   }
   if (session.status !== "ready") return responseJson({ error: "This session is not ready to start." }, 409, headers);
   const blocker = await env.DB.prepare(
@@ -615,7 +617,7 @@ async function handleStartSession(request, env, participant, headers) {
     .bind(timestamp, session.id)
     .run();
   const study = await studyOwner(env, session.study_id, participantCode);
-  return responseJson({ study: await serializeStudy(env, study) }, 200, headers);
+  return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
 }
 
 async function handleMessage(request, env, participant, headers) {
@@ -632,7 +634,7 @@ async function handleMessage(request, env, participant, headers) {
     .first();
   if (duplicate) {
     const study = await studyOwner(env, session.study_id, participantCode);
-    return responseJson({ study: await serializeStudy(env, study) }, 200, headers);
+    return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
   }
   const history = await listMessages(env, session.id);
   const therapistTurn = history.filter(message => message.role === "therapist").length + 1;
@@ -655,7 +657,7 @@ async function handleMessage(request, env, participant, headers) {
         .bind(JSON.stringify(nextState), timestamp, session.id)
     ]);
     const study = await studyOwner(env, session.study_id, participantCode);
-    return responseJson({ study: await serializeStudy(env, study) }, 200, headers);
+    return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
   }
   const promptHistory = [...history, { role: "therapist", content }];
   const profile = PROFILE_BY_ID.get(session.profile_id);
@@ -687,7 +689,7 @@ async function handleMessage(request, env, participant, headers) {
         .bind(JSON.stringify(nextState), session.id)
   ]);
   const study = await studyOwner(env, session.study_id, participantCode);
-  return responseJson({ study: await serializeStudy(env, study) }, 200, headers);
+  return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
 }
 
 async function handleEndSession(request, env, participant, headers) {
@@ -697,7 +699,7 @@ async function handleEndSession(request, env, participant, headers) {
   if (!session) return responseJson({ error: "Session not found." }, 404, headers);
   if (["rating", "completed"].includes(session.status)) {
     const study = await studyOwner(env, session.study_id, participantCode);
-    return responseJson({ study: await serializeStudy(env, study) }, 200, headers);
+    return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
   }
   if (session.status !== "active") return responseJson({ error: "This conversation is not active." }, 409, headers);
   const therapistMessage = await env.DB.prepare("SELECT id FROM session_messages WHERE session_id = ? AND role = 'therapist' LIMIT 1")
@@ -711,7 +713,7 @@ async function handleEndSession(request, env, participant, headers) {
   await env.DB.prepare("UPDATE simulator_sessions SET status = 'rating', state_json = ?, ended_at = ? WHERE id = ? AND status = 'active'")
     .bind(JSON.stringify(nextState), timestamp, session.id).run();
   const study = await studyOwner(env, session.study_id, participantCode);
-  return responseJson({ study: await serializeStudy(env, study) }, 200, headers);
+  return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
 }
 
 async function handleRating(request, env, participant, headers) {
@@ -722,7 +724,7 @@ async function handleRating(request, env, participant, headers) {
   const existing = await env.DB.prepare("SELECT id FROM simulator_ratings WHERE session_id = ?").bind(session.id).first();
   if (existing) {
     const study = await studyOwner(env, session.study_id, participantCode);
-    return responseJson({ study: await serializeStudy(env, study) }, 200, headers);
+    return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
   }
   if (session.status !== "rating") return responseJson({ error: "End the session before submitting its evaluation." }, 409, headers);
   let scores;
@@ -754,7 +756,7 @@ async function handleRating(request, env, participant, headers) {
   }
   await env.DB.batch(statements);
   const study = await studyOwner(env, session.study_id, participantCode);
-  return responseJson({ study: await serializeStudy(env, study) }, 200, headers);
+  return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
 }
 
 async function router(request, env) {

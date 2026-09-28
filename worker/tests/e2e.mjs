@@ -123,11 +123,15 @@ const token = login.token;
 const bootstrap = await call("/api/bootstrap", {}, token);
 assert.equal(bootstrap.profiles.length, 1);
 assert.deepEqual(bootstrap.profiles.map(profile => profile.id), ["case-01"]);
+assert.deepEqual(bootstrap.profiles.map(profile => profile.display_number), [1]);
+assert.deepEqual(bootstrap.profiles.map(profile => profile.display_name), ["Patient 01"]);
 assert.equal(JSON.stringify(bootstrap).includes("simulator_key"), false);
 
 const referredLogin = await register("referral-two@example.org", "LOCAL-EXPERT-5136");
 const referredBootstrap = await call("/api/bootstrap", {}, referredLogin.token);
 assert.deepEqual(referredBootstrap.profiles.map(profile => profile.id), ["case-02"]);
+assert.deepEqual(referredBootstrap.profiles.map(profile => profile.display_number), [1]);
+assert.deepEqual(referredBootstrap.profiles.map(profile => profile.display_name), ["Patient 01"]);
 
 for (let profileNumber = 3; profileNumber <= 30; profileNumber += 1) {
   const referral = await register(`referral-${profileNumber}@example.org`, "LOCAL-EXPERT-5136");
@@ -149,6 +153,8 @@ const secondLogin = await register("second-expert@example.org", "LOCAL-EXPERT-84
 const secondBootstrap = await call("/api/bootstrap", {}, secondLogin.token);
 assert.equal(secondBootstrap.profiles.length, 10);
 assert.deepEqual(secondBootstrap.profiles.map(profile => profile.id), Array.from({ length: 10 }, (_, index) => `case-${String(index + 31).padStart(2, "0")}`));
+assert.deepEqual(secondBootstrap.profiles.map(profile => profile.display_number), Array.from({ length: 10 }, (_, index) => index + 1));
+assert.deepEqual(secondBootstrap.profiles.map(profile => profile.display_name), Array.from({ length: 10 }, (_, index) => `Patient ${String(index + 1).padStart(2, "0")}`));
 assert.equal(bootstrap.profiles.some(profile => secondBootstrap.profiles.some(other => other.id === profile.id)), false);
 
 const crossedCode = await requestApi("/api/auth/login", { email: "referral-one@example.org", access_code: "LOCAL-EXPERT-8427" });
@@ -157,6 +163,8 @@ const crossedCase = await requestApi("/api/studies/start", { profile_id: "case-3
 assert.equal(crossedCase.response.status, 403);
 const ownCase = await call("/api/studies/start", { profile_id: "case-31" }, secondLogin.token);
 assert.equal(ownCase.study.profile.id, "case-31");
+assert.equal(ownCase.study.profile.display_number, 1);
+assert.equal(ownCase.study.profile.display_name, "Patient 01");
 
 let { study } = await call("/api/studies/start", { profile_id: "case-01" }, token);
 assert.equal(study.sessions.length, 3);

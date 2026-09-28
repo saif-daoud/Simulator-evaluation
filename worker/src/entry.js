@@ -170,6 +170,6 @@ export class StudyStore extends DurableObject {
 
 export default {
   async fetch(request, env) {
-    return env.STUDY_STORE.getByName("simulator-evaluation-study-v2").fetch(request);
+    return env.STUDY_STORE.getByName("simulator-evaluation-study-v3").fetch(request);
   }
 };
