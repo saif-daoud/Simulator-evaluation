@@ -68,7 +68,7 @@ const env = {
   DB,
   ALLOWED_ORIGINS: "http://127.0.0.1:5500",
   PARTICIPANT_CODES: "EXPERT-5136,EXPERT-8427",
-  PROFILE_ASSIGNMENTS: "EXPERT-5136:1-30,EXPERT-8427:31-40",
+  PROFILE_ASSIGNMENTS: "EXPERT-5136:1-20,EXPERT-8427:21-30",
   SPLIT_PROFILE_ASSIGNMENTS: "EXPERT-5136",
   EXPERT_ACCESS_CODES: JSON.stringify({
     "EXPERT-5136": "LOCAL-EXPERT-5136",
@@ -136,17 +136,17 @@ assert.deepEqual(referredBootstrap.profiles.map(profile => profile.display_name)
 const secondLogin = await register("second-expert@example.org", "LOCAL-EXPERT-8427");
 const secondBootstrap = await call("/api/bootstrap", {}, secondLogin.token);
 assert.equal(secondBootstrap.profiles.length, 10);
-assert.deepEqual(secondBootstrap.profiles.map(profile => profile.id), Array.from({ length: 10 }, (_, index) => `case-${String(index + 31).padStart(2, "0")}`));
+assert.deepEqual(secondBootstrap.profiles.map(profile => profile.id), Array.from({ length: 10 }, (_, index) => `case-${String(index + 21).padStart(2, "0")}`));
 assert.deepEqual(secondBootstrap.profiles.map(profile => profile.display_number), Array.from({ length: 10 }, (_, index) => index + 1));
 assert.deepEqual(secondBootstrap.profiles.map(profile => profile.display_name), Array.from({ length: 10 }, (_, index) => `Patient ${String(index + 1).padStart(2, "0")}`));
 assert.equal(bootstrap.profiles.some(profile => secondBootstrap.profiles.some(other => other.id === profile.id)), false);
 
 const crossedCode = await requestApi("/api/auth/login", { email: "referral-one@example.org", access_code: "LOCAL-EXPERT-8427" });
 assert.equal(crossedCode.response.status, 403);
-const crossedCase = await requestApi("/api/studies/start", { profile_id: "case-31" }, token);
+const crossedCase = await requestApi("/api/studies/start", { profile_id: "case-21" }, token);
 assert.equal(crossedCase.response.status, 403);
-const ownCase = await call("/api/studies/start", { profile_id: "case-31" }, secondLogin.token);
-assert.equal(ownCase.study.profile.id, "case-31");
+const ownCase = await call("/api/studies/start", { profile_id: "case-21" }, secondLogin.token);
+assert.equal(ownCase.study.profile.id, "case-21");
 assert.equal(ownCase.study.profile.display_number, 1);
 assert.equal(ownCase.study.profile.display_name, "Patient 01");
 

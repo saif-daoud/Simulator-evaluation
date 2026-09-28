@@ -36,7 +36,7 @@ npm install
 npm run dev:local
 ```
 
-Open `http://127.0.0.1:8787`, enter an email address, and use either `LOCAL-EXPERT-5136` (shared referral cohort) or `LOCAL-EXPERT-8427` (the 10-case expert). Each new email in the shared cohort receives one unique patient from cases 1–30; the second code assigns cases 31–40 to one expert. Without a relay or provider credential, this command automatically uses mock patient responses and labels that mode in the header. To exercise the integrated simulators, copy `.dev.vars.example` to `.dev.vars`, configure the relay token, and keep `MOCK_OPENAI=false`.
+Open `http://127.0.0.1:8787`, enter an email address, and use either `LOCAL-EXPERT-5136` (shared referral cohort) or `LOCAL-EXPERT-8427` (the 10-case expert). Each new email in the shared cohort receives one unique patient from cases 1–20; the second code assigns cases 21–30 to one expert. Without a relay or provider credential, this command automatically uses mock patient responses and labels that mode in the header. To exercise the integrated simulators, copy `.dev.vars.example` to `.dev.vars`, configure the relay token, and keep `MOCK_OPENAI=false`.
 
 To use the Cloudflare runtime locally instead:
 
@@ -81,8 +81,8 @@ The QCRI API relay calls the same project endpoint and `/chat/completions` route
 
 - The same case is used for all three simulator sessions, enabling within-case comparison.
 - Participants sign in with an email address and cohort access code. On first login they provide their full name, role or specialty, institution, latest degree, and years of clinical experience; returning participants skip this form.
-- The first cohort shares one access code. Each new email receives one unclaimed patient from cases 1–30, and its progress remains isolated under that email.
-- The second access code is restricted to one email and receives all ten cases 31–40.
+- The first cohort shares one access code. Each new email receives one unclaimed patient from cases 1–20, and its progress remains isolated under that email.
+- The second access code is restricted to one email and receives all ten cases 21–30.
 - Existing Durable Object studies, transcripts, and ratings are retained when participant-profile columns are added.
 - Simulator order is randomized server-side and only anonymous labels reach the browser.
 - Only one session can be active at a time.
