@@ -223,9 +223,9 @@ function publicParticipant(participant) {
 
 function validateParticipantProfile(value) {
   const profile = {
-    name: sanitizeText(value?.name, 120),
-    role: sanitizeText(value?.role, 160),
-    institution: sanitizeText(value?.institution, 200),
+    name: sanitizeText(value?.name, 160),
+    role: sanitizeText(value?.role, 200),
+    institution: sanitizeText(value?.institution, 260),
     latest_degree: sanitizeText(value?.latest_degree, 160),
     years_experience: Number(value?.years_experience)
   };

@@ -119,9 +119,24 @@ function automaticTerminationNotice(session) {
   return "";
 }
 
-function hasIncompletePatient() {
-  return state.study?.status === "active"
+function completedPatientCount() {
+  return Object.values(state.studies).filter(study => study?.status === "completed").length;
+}
+
+function hasIncompleteRequirement() {
+  return state.requiredPatients > 0 && completedPatientCount() < state.requiredPatients;
+}
+
+function exitWarning() {
+  const active = state.study?.status === "active"
     || Object.values(state.studies).some(study => study?.status === "active");
+  if (active) {
+    return "Your input for this patient is incomplete. Please finish the remaining simulator baseline(s) and submit their ratings before leaving.";
+  }
+  if (state.requiredPatients > 1) {
+    return `Your evaluation is incomplete. Please complete all ${state.requiredPatients} assigned patients, including all three simulator baselines and ratings for each, before leaving.`;
+  }
+  return "Your input is only complete after you finish your assigned patient’s three simulator baselines and submit all three ratings.";
 }
 
 function showParticipantForm(email = state.participant) {
@@ -141,9 +156,7 @@ function showLoginForm() {
 }
 
 function signOut(force = false) {
-  if (!force && hasIncompletePatient() && !window.confirm(
-    "Your input for this patient is incomplete. Please finish the remaining simulator baseline(s) and submit their ratings before leaving."
-  )) return false;
+  if (!force && hasIncompleteRequirement() && !window.confirm(exitWarning())) return false;
   state.token = "";
   state.participant = "";
   state.profilePending = false;
@@ -626,7 +639,7 @@ el.ratingForm.addEventListener("submit", submitRating);
 el.completeButton.addEventListener("click", loadDashboard);
 
 window.addEventListener("beforeunload", event => {
-  if (!hasIncompletePatient()) return;
+  if (!hasIncompleteRequirement()) return;
   event.preventDefault();
   event.returnValue = "";
 });
