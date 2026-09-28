@@ -129,6 +129,22 @@ const referredLogin = await register("referral-two@example.org", "LOCAL-EXPERT-5
 const referredBootstrap = await call("/api/bootstrap", {}, referredLogin.token);
 assert.deepEqual(referredBootstrap.profiles.map(profile => profile.id), ["case-02"]);
 
+for (let profileNumber = 3; profileNumber <= 30; profileNumber += 1) {
+  const referral = await register(`referral-${profileNumber}@example.org`, "LOCAL-EXPERT-5136");
+  const referralBootstrap = await call("/api/bootstrap", {}, referral.token);
+  assert.deepEqual(
+    referralBootstrap.profiles.map(profile => profile.id),
+    [`case-${String(profileNumber).padStart(2, "0")}`]
+  );
+}
+
+const exhaustedSharedCode = await requestApi("/api/auth/login", {
+  email: "referral-31@example.org",
+  access_code: "LOCAL-EXPERT-5136"
+});
+assert.equal(exhaustedSharedCode.response.status, 409);
+assert.match(exhaustedSharedCode.payload.error, /already been claimed/i);
+
 const secondLogin = await register("second-expert@example.org", "LOCAL-EXPERT-8427");
 const secondBootstrap = await call("/api/bootstrap", {}, secondLogin.token);
 assert.equal(secondBootstrap.profiles.length, 10);
