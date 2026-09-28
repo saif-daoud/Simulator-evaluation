@@ -13,8 +13,7 @@ CREATE TABLE IF NOT EXISTS participants (
   years_experience INTEGER,
   profile_completed INTEGER NOT NULL DEFAULT 0 CHECK (profile_completed IN (0, 1)),
   created_at TEXT NOT NULL,
-  last_seen_at TEXT NOT NULL,
-  UNIQUE (cohort_code, assignment_start, assignment_end)
+  last_seen_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS studies (
@@ -41,6 +40,19 @@ CREATE TABLE IF NOT EXISTS simulator_sessions (
   completed_at TEXT,
   UNIQUE (study_id, display_order),
   UNIQUE (study_id, simulator_key),
+  FOREIGN KEY (study_id) REFERENCES studies(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS patient_assignments (
+  profile_id TEXT PRIMARY KEY,
+  participant_code TEXT NOT NULL,
+  study_id TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL CHECK (status IN ('reserved', 'claimed', 'completed')),
+  reserved_at TEXT NOT NULL,
+  expires_at TEXT,
+  claimed_at TEXT,
+  completed_at TEXT,
+  FOREIGN KEY (participant_code) REFERENCES participants(participant_code),
   FOREIGN KEY (study_id) REFERENCES studies(id) ON DELETE CASCADE
 );
 

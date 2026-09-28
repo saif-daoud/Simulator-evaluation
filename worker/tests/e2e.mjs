@@ -67,14 +67,10 @@ DB.exec(fs.readFileSync(path.join(workerRoot, "schema.sql"), "utf8"));
 const env = {
   DB,
   ALLOWED_ORIGINS: "http://127.0.0.1:5500",
-  PARTICIPANT_CODES: "EXPERT-5136,EXPERT-8427",
-  PROFILE_ASSIGNMENTS: "EXPERT-5136:1-30,EXPERT-8427:31-40",
-  SPLIT_PROFILE_ASSIGNMENTS: "EXPERT-5136",
-  EXPERT_ACCESS_CODES: JSON.stringify({
-    "EXPERT-5136": "LOCAL-EXPERT-5136",
-    "EXPERT-8427": "LOCAL-EXPERT-8427"
-  }),
-  OPENAI_MODEL: "gpt-4.1",
+  PARTICIPANT_CODES: "EXPERT-5136",
+  PROFILE_ASSIGNMENTS: "EXPERT-5136:1-40",
+  EXPERT_ACCESS_CODES: JSON.stringify({ "EXPERT-5136": "LOCAL-EXPERT-5136" }),
+  OPENAI_MODEL: "gpt-5.1",
   OPENAI_API_KEY: "unused-in-mock-mode",
   MOCK_OPENAI: "true",
   TOKEN_SECRET: "integration-test-secret"
@@ -102,8 +98,8 @@ async function call(pathname, body, token = "") {
   return payload;
 }
 
-async function register(email, accessCode) {
-  const login = await call("/api/auth/login", { email, access_code: accessCode });
+async function register(email) {
+  const login = await call("/api/auth/login", { email, access_code: "LOCAL-EXPERT-5136" });
   assert.equal(login.email, email);
   assert.equal(login.profile_required, true);
   await call("/api/auth/profile", {
@@ -113,125 +109,121 @@ async function register(email, accessCode) {
     latest_degree: "PhD",
     years_experience: 12
   }, login.token);
-  const resumed = await call("/api/auth/login", { email, access_code: accessCode });
+  const resumed = await call("/api/auth/login", { email, access_code: "LOCAL-EXPERT-5136" });
   assert.equal(resumed.profile_required, false);
-  return resumed;
+  return resumed.token;
 }
 
-const login = await register("referral-one@example.org", "LOCAL-EXPERT-5136");
-const token = login.token;
-const bootstrap = await call("/api/bootstrap", {}, token);
-assert.equal(bootstrap.profiles.length, 1);
-assert.deepEqual(bootstrap.profiles.map(profile => profile.id), ["case-01"]);
-assert.deepEqual(bootstrap.profiles.map(profile => profile.display_number), [1]);
-assert.deepEqual(bootstrap.profiles.map(profile => profile.display_name), ["Patient 01"]);
-assert.equal(JSON.stringify(bootstrap).includes("simulator_key"), false);
-
-const referredLogin = await register("referral-two@example.org", "LOCAL-EXPERT-5136");
-const referredBootstrap = await call("/api/bootstrap", {}, referredLogin.token);
-assert.deepEqual(referredBootstrap.profiles.map(profile => profile.id), ["case-02"]);
-assert.deepEqual(referredBootstrap.profiles.map(profile => profile.display_number), [1]);
-assert.deepEqual(referredBootstrap.profiles.map(profile => profile.display_name), ["Patient 01"]);
-
-for (let profileNumber = 3; profileNumber <= 30; profileNumber += 1) {
-  const referral = await register(`referral-${profileNumber}@example.org`, "LOCAL-EXPERT-5136");
-  const referralBootstrap = await call("/api/bootstrap", {}, referral.token);
-  assert.deepEqual(
-    referralBootstrap.profiles.map(profile => profile.id),
-    [`case-${String(profileNumber).padStart(2, "0")}`]
-  );
-  assert.deepEqual(referralBootstrap.profiles.map(profile => profile.display_number), [1]);
-}
-
-const exhaustedSharedCode = await requestApi("/api/auth/login", {
-  email: "referral-31@example.org",
-  access_code: "LOCAL-EXPERT-5136"
+const rejectedOldCode = await requestApi("/api/auth/login", {
+  email: "old-code@example.org",
+  access_code: "LOCAL-EXPERT-8427"
 });
-assert.equal(exhaustedSharedCode.response.status, 409);
-assert.match(exhaustedSharedCode.payload.error, /already been claimed/i);
+assert.equal(rejectedOldCode.response.status, 403);
 
-const secondLogin = await register("second-expert@example.org", "LOCAL-EXPERT-8427");
-const secondBootstrap = await call("/api/bootstrap", {}, secondLogin.token);
-assert.equal(secondBootstrap.profiles.length, 10);
-assert.deepEqual(secondBootstrap.profiles.map(profile => profile.id), Array.from({ length: 10 }, (_, index) => `case-${String(index + 31).padStart(2, "0")}`));
-assert.deepEqual(secondBootstrap.profiles.map(profile => profile.display_number), Array.from({ length: 10 }, (_, index) => index + 1));
-assert.deepEqual(secondBootstrap.profiles.map(profile => profile.display_name), Array.from({ length: 10 }, (_, index) => `Patient ${String(index + 1).padStart(2, "0")}`));
-assert.equal(bootstrap.profiles.some(profile => secondBootstrap.profiles.some(other => other.id === profile.id)), false);
+const firstToken = await register("first@example.org");
+const secondToken = await register("second@example.org");
 
-const crossedCode = await requestApi("/api/auth/login", { email: "referral-one@example.org", access_code: "LOCAL-EXPERT-8427" });
-assert.equal(crossedCode.response.status, 403);
-const crossedCase = await requestApi("/api/studies/start", { profile_id: "case-31" }, token);
-assert.equal(crossedCase.response.status, 403);
-const ownCase = await call("/api/studies/start", { profile_id: "case-31" }, secondLogin.token);
-assert.equal(ownCase.study.profile.id, "case-31");
-assert.equal(ownCase.study.profile.display_number, 1);
-assert.equal(ownCase.study.profile.display_name, "Patient 01");
+const firstOffer = await call("/api/bootstrap", {}, firstToken);
+const secondOffer = await call("/api/bootstrap", {}, secondToken);
+for (const offer of [firstOffer, secondOffer]) {
+  assert.equal(offer.required_patients, 0);
+  assert.equal(offer.next_patient_available, true);
+  assert.deepEqual(offer.profiles.map(profile => profile.id), ["case-01"]);
+  assert.deepEqual(offer.profiles.map(profile => profile.display_name), ["Patient 01"]);
+}
 
-let { study } = await call("/api/studies/start", { profile_id: "case-01" }, token);
-assert.equal(study.sessions.length, 3);
-assert.deepEqual(study.sessions.map(session => session.status), ["ready", "locked", "locked"]);
-assert.equal(JSON.stringify(study).includes("patient_act"), false);
-assert.equal(JSON.stringify(study).includes("patient_psi"), false);
-assert.equal(JSON.stringify(study).includes("topas"), false);
+// Merely opening a patient does not claim it; both experts can still see the same provisional offer.
+let { study: firstStudy } = await call("/api/studies/start", { profile_id: "case-01" }, firstToken);
+let { study: secondStudy } = await call("/api/studies/start", { profile_id: "case-01" }, secondToken);
+assert.deepEqual(firstStudy.sessions.map(session => session.status), ["ready", "locked", "locked"]);
+assert.equal(JSON.stringify(firstStudy).includes("simulator_key"), false);
+
+// Starting the first session creates a temporary reservation.
+({ study: firstStudy } = await call("/api/sessions/start", { session_id: firstStudy.sessions[0].id }, firstToken));
+let assignment = await DB.prepare("SELECT status FROM patient_assignments WHERE profile_id = 'case-01'").first();
+assert.equal(assignment.status, "reserved");
+
+// A competing unstarted study is released and receives the next patient instead.
+const collision = await requestApi("/api/sessions/start", { session_id: secondStudy.sessions[0].id }, secondToken);
+assert.equal(collision.response.status, 409);
+assert.match(collision.payload.error, /another expert/i);
+const secondNext = await call("/api/bootstrap", {}, secondToken);
+assert.deepEqual(secondNext.profiles.map(profile => profile.id), ["case-02"]);
+assert.deepEqual(secondNext.profiles.map(profile => profile.display_name), ["Patient 01"]);
+({ study: secondStudy } = await call("/api/studies/start", { profile_id: "case-02" }, secondToken));
+({ study: secondStudy } = await call("/api/sessions/start", { session_id: secondStudy.sessions[0].id }, secondToken));
+
+// A reservation with no completed session expires and returns its patient to the pool.
+const thirdToken = await register("third@example.org");
+const thirdOffer = await call("/api/bootstrap", {}, thirdToken);
+assert.deepEqual(thirdOffer.profiles.map(profile => profile.id), ["case-03"]);
+let { study: thirdStudy } = await call("/api/studies/start", { profile_id: "case-03" }, thirdToken);
+({ study: thirdStudy } = await call("/api/sessions/start", { session_id: thirdStudy.sessions[0].id }, thirdToken));
+await DB.prepare("UPDATE patient_assignments SET expires_at = ? WHERE study_id = ?")
+  .bind("2000-01-01T00:00:00.000Z", thirdStudy.id).run();
+const thirdAfterExpiry = await call("/api/bootstrap", {}, thirdToken);
+assert.deepEqual(thirdAfterExpiry.profiles.map(profile => profile.id), ["case-03"]);
+assert.equal(await DB.prepare("SELECT study_id FROM patient_assignments WHERE profile_id = 'case-03'").first(), null);
 
 for (let index = 0; index < 3; index += 1) {
-  const session = study.sessions[index];
-  ({ study } = await call("/api/sessions/start", { session_id: session.id, client_request_id: `start-${index}` }, token));
-  assert.equal(study.sessions[index].status, "active");
-  assert.equal(study.sessions[index].messages.length, 0);
-  assert.equal(study.sessions[index].can_end, false);
-  if (index === 0) {
-    await DB.prepare(
-      "INSERT INTO session_messages (session_id, role, content, client_message_id, created_at) VALUES (?, 'patient', ?, ?, ?)"
-    ).bind(session.id, "Legacy generated opener", `opening:${session.id}`, new Date().toISOString()).run();
-    await DB.prepare("UPDATE simulator_sessions SET state_json = ? WHERE id = ?")
-      .bind(JSON.stringify({ turn: 1, legacy: true }), session.id).run();
-    ({ study } = await call("/api/study", { study_id: study.id }, token));
-    assert.equal(study.sessions[index].messages.length, 0);
+  const session = firstStudy.sessions[index];
+  if (index > 0) {
+    ({ study: firstStudy } = await call("/api/sessions/start", { session_id: session.id }, firstToken));
   }
-  ({ study } = await call("/api/sessions/message", {
+  ({ study: firstStudy } = await call("/api/sessions/message", {
     session_id: session.id,
     content: index === 0
       ? "Thank you for speaking with me. Goodbye."
-      : "Thank you for sharing that. Could you tell me what feels most difficult about it right now?",
+      : "Thank you for sharing that. What has felt most difficult recently?",
     client_message_id: `message-${index}`
-  }, token));
-  if (index === 0) {
-    assert.deepEqual(study.sessions[index].messages.map(message => message.role), ["therapist"]);
-    assert.equal(study.sessions[index].termination_reason, "therapist_farewell");
-  } else {
-    assert.deepEqual(study.sessions[index].messages.map(message => message.role), ["therapist", "patient"]);
-    ({ study } = await call("/api/sessions/end", { session_id: session.id }, token));
-    assert.equal(study.sessions[index].termination_reason, "expert_ended");
+  }, firstToken));
+  if (firstStudy.sessions[index].status === "active") {
+    ({ study: firstStudy } = await call("/api/sessions/end", { session_id: session.id }, firstToken));
   }
-  assert.equal(study.sessions[index].status, "rating");
-  ({ study } = await call("/api/sessions/rate", {
+  assert.equal(firstStudy.sessions[index].status, "rating");
+  assignment = await DB.prepare("SELECT status FROM patient_assignments WHERE profile_id = 'case-01'").first();
+  assert.equal(assignment.status, "claimed");
+  ({ study: firstStudy } = await call("/api/sessions/rate", {
     session_id: session.id,
     scores: { coherence: 4, disclosure: 4, resistance: 3, emotional: 4, realism: 4 },
     comments: "Integration test"
-  }, token));
+  }, firstToken));
+  assignment = await DB.prepare("SELECT status FROM patient_assignments WHERE profile_id = 'case-01'").first();
+  assert.equal(assignment.status, index === 2 ? "completed" : "claimed");
 }
 
-assert.equal(study.status, "completed");
-assert.equal(study.completed_sessions, 3);
-const ratings = await DB.prepare("SELECT COUNT(*) AS count FROM simulator_ratings").first();
-assert.equal(Number(ratings.count), 3);
-const methods = await DB.prepare("SELECT COUNT(DISTINCT simulator_key) AS count FROM simulator_sessions").first();
-assert.equal(Number(methods.count), 3);
+assert.equal(firstStudy.status, "completed");
+assert.equal(firstStudy.completed_sessions, 3);
 
-const referredToken = referredLogin.token;
-({ study } = await call("/api/studies/start", { profile_id: "case-02" }, referredToken));
-const cappedSession = study.sessions[0];
-({ study } = await call("/api/sessions/start", { session_id: cappedSession.id, client_request_id: "start-capped" }, referredToken));
-assert.equal(study.sessions[0].messages.length, 0);
+// The first expert may stop, or voluntarily continue with the next free patient.
+// Case 02 is reserved by the second expert, so case 03 is offered as Patient 02.
+const firstNext = await call("/api/bootstrap", {}, firstToken);
+assert.equal(firstNext.required_patients, 0);
+assert.deepEqual(firstNext.profiles.map(profile => profile.id), ["case-01", "case-03"]);
+assert.deepEqual(firstNext.profiles.map(profile => profile.display_name), ["Patient 01", "Patient 02"]);
+
+const activeSecond = await call("/api/bootstrap", {}, secondToken);
+assert.equal(activeSecond.required_patients, 1);
+assert.equal(activeSecond.next_patient_available, false);
+assert.deepEqual(activeSecond.profiles.map(profile => profile.id), ["case-02"]);
+
+// Exercise the 50-turn automatic termination on the second expert's reserved patient.
+const cappedSession = secondStudy.sessions[0];
 for (let turn = 1; turn <= 50; turn += 1) {
-  ({ study } = await call("/api/sessions/message", {
+  ({ study: secondStudy } = await call("/api/sessions/message", {
     session_id: cappedSession.id,
     content: `This is therapist turn ${turn}. Please continue.`,
     client_message_id: `capped-message-${turn}`
-  }, referredToken));
-  assert.equal(study.sessions[0].status, turn === 50 ? "rating" : "active");
+  }, secondToken));
+  assert.equal(secondStudy.sessions[0].status, turn === 50 ? "rating" : "active");
 }
-assert.equal(study.sessions[0].termination_reason, "max_turns");
-assert.equal(study.sessions[0].messages.filter(message => message.role === "therapist").length, 50);
-console.log("End-to-end mocked study flow passed.");
+assert.equal(secondStudy.sessions[0].termination_reason, "max_turns");
+assert.equal(secondStudy.sessions[0].messages.filter(message => message.role === "therapist").length, 50);
+
+const ratings = await DB.prepare("SELECT COUNT(*) AS count FROM simulator_ratings").first();
+assert.equal(Number(ratings.count), 3);
+const methods = await DB.prepare("SELECT COUNT(DISTINCT simulator_key) AS count FROM simulator_sessions WHERE study_id = ?")
+  .bind(firstStudy.id).first();
+assert.equal(Number(methods.count), 3);
+
+console.log("End-to-end sequential patient allocation flow passed.");

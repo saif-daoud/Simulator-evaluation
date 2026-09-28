@@ -11,7 +11,7 @@ const projectRoot = path.resolve(workerRoot, "..");
 const frontendRoot = path.join(projectRoot, "frontend");
 const localVarsPath = path.join(workerRoot, ".dev.vars");
 const localDataDir = path.join(workerRoot, ".wrangler", "local-node");
-const localDatabasePath = path.join(localDataDir, "study.sqlite3");
+const localDatabasePath = path.join(localDataDir, "study-sequential.sqlite3");
 const port = Number(process.env.PORT || 8787);
 const host = process.env.HOST || "127.0.0.1";
 
@@ -110,9 +110,7 @@ for (const [name, definition] of [
 DB.database.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_email
     ON participants(email) WHERE email IS NOT NULL AND email != '';
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_assignment
-    ON participants(cohort_code, assignment_start, assignment_end)
-    WHERE email IS NOT NULL AND email != '';
+  DROP INDEX IF EXISTS idx_participants_assignment;
 `);
 
 const openAiKey = process.env.OPENAI_API_KEY || "";
@@ -121,12 +119,10 @@ const providerKey = openAiKey || azureOpenAiKey;
 const env = {
   DB,
   ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS || `http://${host}:${port},http://localhost:${port}`,
-  PARTICIPANT_CODES: process.env.PARTICIPANT_CODES || "EXPERT-5136,EXPERT-8427",
-  PROFILE_ASSIGNMENTS: process.env.PROFILE_ASSIGNMENTS || "EXPERT-5136:1-30,EXPERT-8427:31-40",
-  SPLIT_PROFILE_ASSIGNMENTS: process.env.SPLIT_PROFILE_ASSIGNMENTS || "EXPERT-5136",
+  PARTICIPANT_CODES: process.env.PARTICIPANT_CODES || "EXPERT-5136",
+  PROFILE_ASSIGNMENTS: process.env.PROFILE_ASSIGNMENTS || "EXPERT-5136:1-40",
   EXPERT_ACCESS_CODES: process.env.EXPERT_ACCESS_CODES || JSON.stringify({
-    "EXPERT-5136": "LOCAL-EXPERT-5136",
-    "EXPERT-8427": "LOCAL-EXPERT-8427"
+    "EXPERT-5136": "LOCAL-EXPERT-5136"
   }),
   TOKEN_SECRET: process.env.TOKEN_SECRET || "local-development-token-secret",
   OPENAI_MODEL: process.env.OPENAI_MODEL || "gpt-5.1",
@@ -195,7 +191,7 @@ const server = http.createServer(async (request, response) => {
 server.listen(port, host, () => {
   const responseMode = String(env.MOCK_OPENAI).toLowerCase() === "true" ? "mock responses" : env.OPENAI_MODEL;
   console.log(`CBT simulator evaluation: http://${host}:${port}`);
-  console.log("Local access codes: LOCAL-EXPERT-5136 (shared referrals) and LOCAL-EXPERT-8427 (10-case expert)");
+  console.log("Local access code: LOCAL-EXPERT-5136");
   console.log(`Patient response mode: ${responseMode}`);
   console.log(`Local database: ${localDatabasePath}`);
 });

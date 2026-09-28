@@ -119,12 +119,22 @@ function automaticTerminationNotice(session) {
   return "";
 }
 
-function completedPatientCount() {
-  return Object.values(state.studies).filter(study => study?.status === "completed").length;
+function studySummary(study) {
+  const sessions = study?.sessions || [];
+  return {
+    id: study.id,
+    profile_id: study.profile.id,
+    status: study.status,
+    completed_sessions: study.completed_sessions,
+    has_started: sessions.some(session => (
+      !["ready", "locked"].includes(session.status) || Boolean(session.messages?.length)
+    ))
+  };
 }
 
 function hasIncompleteRequirement() {
-  return state.requiredPatients > 0 && completedPatientCount() < state.requiredPatients;
+  return Object.values(state.studies).some(study => study?.status === "active"
+    && (study.has_started || Number(study.completed_sessions || 0) > 0));
 }
 
 function exitWarning() {
@@ -212,11 +222,14 @@ async function loadDashboard() {
   try {
     const payload = await api("/api/bootstrap", { body: "{}" });
     state.profiles = payload.profiles;
-    state.requiredPatients = Number(payload.required_patients || payload.profiles.length);
+    state.requiredPatients = Number(payload.required_patients || 0);
     state.studies = Object.fromEntries((payload.studies || []).map(study => [study.profile_id, study]));
-    el.assignmentCopy.textContent = state.requiredPatients === 1
-      ? "You have one assigned patient. Complete and rate all three simulator baselines before leaving the patient."
-      : `You have ${state.requiredPatients} assigned patients. For every patient, complete and rate all three simulator baselines before moving on.`;
+    const active = (payload.studies || []).find(study => study.status === "active");
+    el.assignmentCopy.textContent = active
+      ? "Complete and rate all three simulator baselines for your current patient before proceeding to another patient."
+      : payload.next_patient_available
+        ? "One patient is offered at a time. After completing all three simulator baselines, you may choose to evaluate another patient."
+        : "All patients in the study pool have been claimed. Thank you for your evaluations.";
     renderProfileCards();
     showView("dashboard");
   } catch (error) {
@@ -304,12 +317,7 @@ async function openCase(profileId) {
       ? await api("/api/study", { body: JSON.stringify({ study_id: summary.id }) })
       : await api("/api/studies/start", { body: JSON.stringify({ profile_id: profileId, client_request_id: crypto.randomUUID() }) });
     state.study = payload.study;
-    state.studies[profileId] = {
-      id: state.study.id,
-      profile_id: state.study.profile.id,
-      status: state.study.status,
-      completed_sessions: state.study.completed_sessions
-    };
+    state.studies[profileId] = studySummary(state.study);
     showCase();
   } catch (error) {
     handleError(error);
@@ -382,12 +390,7 @@ function showSession() {
 async function refreshStudy() {
   const payload = await api("/api/study", { body: JSON.stringify({ study_id: state.study.id }) });
   state.study = payload.study;
-  state.studies[state.study.profile.id] = {
-    id: state.study.id,
-    profile_id: state.study.profile.id,
-    status: state.study.status,
-    completed_sessions: state.study.completed_sessions
-  };
+  state.studies[state.study.profile.id] = studySummary(state.study);
 }
 
 async function startSession() {
@@ -398,12 +401,19 @@ async function startSession() {
   try {
     const payload = await api("/api/sessions/start", { body: JSON.stringify({ session_id: session.id, client_request_id: crypto.randomUUID() }) });
     state.study = payload.study;
+    state.studies[state.study.profile.id] = studySummary(state.study);
     const updated = currentSession();
     const notice = automaticTerminationNotice(updated);
     if (notice) showToast(notice);
     updated?.status === "rating" ? showRating() : showSession();
   } catch (error) {
     handleError(error);
+    if (error.status === 409 && /another expert|no longer available/i.test(error.message)) {
+      if (state.study?.profile?.id) delete state.studies[state.study.profile.id];
+      state.study = null;
+      await loadDashboard();
+      return;
+    }
     await refreshStudy().catch(() => {});
     showSession();
   } finally {
@@ -425,6 +435,7 @@ async function sendMessage(event) {
   try {
     const payload = await api("/api/sessions/message", { body: JSON.stringify({ session_id: session.id, content, client_message_id: clientMessageId }) });
     state.study = payload.study;
+    state.studies[state.study.profile.id] = studySummary(state.study);
     const updated = currentSession();
     const notice = automaticTerminationNotice(updated);
     if (notice) showToast(notice);
@@ -447,6 +458,7 @@ async function endSession() {
   try {
     const payload = await api("/api/sessions/end", { body: JSON.stringify({ session_id: session.id, client_request_id: crypto.randomUUID() }) });
     state.study = payload.study;
+    state.studies[state.study.profile.id] = studySummary(state.study);
     showRating();
   } catch (error) {
     handleError(error);
@@ -532,7 +544,7 @@ async function submitRating(event) {
   try {
     const payload = await api("/api/sessions/rate", { body: JSON.stringify({ session_id: session.id, scores, comments: el.ratingComments.value.trim(), client_request_id: crypto.randomUUID() }) });
     state.study = payload.study;
-    state.studies[state.study.profile.id] = { id: state.study.id, profile_id: state.study.profile.id, status: state.study.status, completed_sessions: state.study.completed_sessions };
+    state.studies[state.study.profile.id] = studySummary(state.study);
     showToast("Evaluation saved.");
     if (state.study.status === "completed") showView("complete");
     else showCase();

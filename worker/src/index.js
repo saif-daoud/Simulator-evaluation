@@ -7,6 +7,7 @@ export const SIMULATOR_KEYS = ["patient_psi", "patient_act", "topas"];
 export const MAX_THERAPIST_TURNS = 50;
 const SIMULATOR_PLACEHOLDERS = SIMULATOR_KEYS.map(() => "?").join(", ");
 const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const RESERVATION_TTL_MS = 24 * 60 * 60 * 1000;
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
 const PROFILE_BY_ID = new Map(PROFILES.map(profile => [profile.id, profile]));
 const SPEAKER_PREFIX = /^\s*(?:(?:therapist|patient|client|persuader|persuadee)\s*:\s*)+/i;
@@ -283,34 +284,10 @@ function assignmentRange(env, cohortCode) {
   return { start, end };
 }
 
-function splitAssignmentCodes(env) {
-  return String(env.SPLIT_PROFILE_ASSIGNMENTS || "")
-    .split(",")
-    .map(value => value.trim().toUpperCase())
-    .filter(Boolean);
-}
-
-async function allocateAssignment(env, cohortCode) {
+function cohortRange(env, cohortCode) {
   const range = assignmentRange(env, cohortCode);
   if (!range) throw new Error("No patient assignment is configured for this access code.");
-  if (!splitAssignmentCodes(env).includes(cohortCode)) {
-    const existing = await env.DB.prepare(
-      "SELECT participant_code FROM participants WHERE cohort_code = ? AND email IS NOT NULL AND email != '' LIMIT 1"
-    ).bind(cohortCode).first();
-    if (existing) throw new Error("This access code is already registered to an email address.");
-    return range;
-  }
-  const assigned = await env.DB.prepare(
-    `SELECT assignment_start FROM participants
-      WHERE cohort_code = ? AND email IS NOT NULL AND email != ''
-        AND assignment_start = assignment_end
-        AND assignment_start BETWEEN ? AND ?`
-  ).bind(cohortCode, range.start, range.end).all();
-  const used = new Set((assigned.results || []).map(row => Number(row.assignment_start)));
-  for (let profileNumber = range.start; profileNumber <= range.end; profileNumber += 1) {
-    if (!used.has(profileNumber)) return { start: profileNumber, end: profileNumber };
-  }
-  throw new Error("All patient assignments for this access code have already been claimed.");
+  return range;
 }
 
 async function loadParticipant(env, participantCode) {
@@ -332,18 +309,75 @@ async function requireParticipant(request, env) {
 }
 
 export function assignedProfiles(env, participant) {
-  const range = typeof participant === "string"
-    ? assignmentRange(env, participant)
-    : {
-        start: Number(participant?.assignment_start),
-        end: Number(participant?.assignment_end)
-      };
+  const cohortCode = typeof participant === "string" ? participant : participant?.cohort_code;
+  const range = assignmentRange(env, String(cohortCode || ""));
   if (!range || !Number.isInteger(range.start) || !Number.isInteger(range.end)) return [];
   return PROFILES.filter(profile => profile.display_number >= range.start && profile.display_number <= range.end);
 }
 
-function profileAssigned(env, participant, profileId) {
-  return assignedProfiles(env, participant).some(profile => profile.id === profileId);
+function reservationExpiry() {
+  return new Date(Date.now() + RESERVATION_TTL_MS).toISOString();
+}
+
+async function cleanupExpiredReservations(env) {
+  const expired = await env.DB.prepare(
+    "SELECT study_id FROM patient_assignments WHERE status = 'reserved' AND expires_at IS NOT NULL AND expires_at <= ?"
+  ).bind(now()).all();
+  for (const row of expired.results || []) {
+    await env.DB.prepare("DELETE FROM studies WHERE id = ?").bind(row.study_id).run();
+  }
+}
+
+async function discardStaleUnstartedStudy(env, participantCode) {
+  const stale = await env.DB.prepare(
+    `SELECT s.id
+       FROM studies s
+       JOIN patient_assignments pa ON pa.profile_id = s.profile_id AND pa.study_id != s.id
+      WHERE s.participant_code = ? AND s.status = 'active'
+        AND NOT EXISTS (SELECT 1 FROM patient_assignments own WHERE own.study_id = s.id)
+      LIMIT 1`
+  ).bind(participantCode).first();
+  if (stale) await env.DB.prepare("DELETE FROM studies WHERE id = ?").bind(stale.id).run();
+}
+
+async function participantStudyRows(env, participantCode) {
+  const result = await env.DB.prepare(
+    `SELECT s.id, s.participant_code, s.profile_id, s.status, s.created_at, s.completed_at,
+            SUM(CASE WHEN ss.status = 'completed' AND ss.simulator_key IN ('patient_psi', 'patient_act', 'topas') THEN 1 ELSE 0 END) AS completed_sessions,
+            MAX(CASE WHEN ss.started_at IS NOT NULL THEN 1 ELSE 0 END) AS has_started
+       FROM studies s
+       LEFT JOIN simulator_sessions ss ON ss.study_id = s.id
+      WHERE s.participant_code = ?
+      GROUP BY s.id, s.participant_code, s.profile_id, s.status, s.created_at, s.completed_at
+      ORDER BY s.created_at, s.id`
+  ).bind(participantCode).all();
+  return (result.results || []).map(row => ({
+    ...row,
+    completed_sessions: Number(row.completed_sessions || 0),
+    has_started: Number(row.has_started || 0) === 1
+  }));
+}
+
+async function nextAvailableProfile(env, participant) {
+  const assigned = await env.DB.prepare("SELECT profile_id FROM patient_assignments").all();
+  const unavailable = new Set((assigned.results || []).map(row => row.profile_id));
+  const previous = await env.DB.prepare("SELECT profile_id FROM studies WHERE participant_code = ?").bind(participant.participant_code).all();
+  for (const row of previous.results || []) unavailable.add(row.profile_id);
+  return assignedProfiles(env, participant).find(profile => !unavailable.has(profile.id)) || null;
+}
+
+async function touchReservation(env, studyId) {
+  await env.DB.prepare(
+    "UPDATE patient_assignments SET expires_at = ? WHERE study_id = ? AND status = 'reserved'"
+  ).bind(reservationExpiry(), studyId).run();
+}
+
+async function claimPatient(env, studyId, timestamp = now()) {
+  await env.DB.prepare(
+    `UPDATE patient_assignments
+        SET status = 'claimed', claimed_at = COALESCE(claimed_at, ?), expires_at = NULL
+      WHERE study_id = ? AND status = 'reserved'`
+  ).bind(timestamp, studyId).run();
 }
 
 async function studyOwner(env, studyId, participantCode) {
@@ -359,17 +393,14 @@ async function sessionOwner(env, sessionId, participant) {
        JOIN studies s ON s.id = ss.study_id
       WHERE ss.id = ? AND s.participant_code = ?`
   ).bind(sessionId, participant.participant_code).first();
-  return session
-    && SIMULATOR_KEYS.includes(session.simulator_key)
-    && profileAssigned(env, participant, session.profile_id)
-    ? session
-    : null;
+  return session && SIMULATOR_KEYS.includes(session.simulator_key) ? session : null;
 }
 
 async function serializeStudy(env, studyRecord, participant) {
   const profile = PROFILE_BY_ID.get(studyRecord.profile_id);
   if (!profile) throw new Error("Study profile is unavailable");
-  const displayNumber = assignedProfiles(env, participant).findIndex(candidate => candidate.id === profile.id) + 1;
+  const studies = await participantStudyRows(env, participant.participant_code);
+  const displayNumber = studies.findIndex(candidate => candidate.id === studyRecord.id) + 1;
   if (displayNumber < 1) throw new Error("Study profile is not assigned to this participant");
   const current = await env.DB.prepare(
     `SELECT id FROM simulator_sessions
@@ -476,9 +507,9 @@ async function handleLogin(request, env, headers) {
     return responseJson({ error: "This email is registered with a different study access code." }, 403, headers);
   }
   if (!participant) {
-    let allocation;
+    let pool;
     try {
-      allocation = await allocateAssignment(env, cohortCode);
+      pool = cohortRange(env, cohortCode);
     } catch (error) {
       return responseJson({ error: error.message }, 409, headers);
     }
@@ -487,13 +518,13 @@ async function handleLogin(request, env, headers) {
       `INSERT INTO participants
        (participant_code, email, cohort_code, assignment_start, assignment_end, profile_completed, created_at, last_seen_at)
        VALUES (?, ?, ?, ?, ?, 0, ?, ?)`
-    ).bind(participantCode, email, cohortCode, allocation.start, allocation.end, timestamp, timestamp).run();
+    ).bind(participantCode, email, cohortCode, pool.start, pool.end, timestamp, timestamp).run();
     participant = {
       participant_code: participantCode,
       email,
       cohort_code: cohortCode,
-      assignment_start: allocation.start,
-      assignment_end: allocation.end,
+      assignment_start: pool.start,
+      assignment_end: pool.end,
       profile_completed: 0
     };
   } else {
@@ -529,24 +560,28 @@ async function handleParticipantProfile(request, env, participant, headers) {
 }
 
 async function handleBootstrap(env, participant, headers) {
-  const result = await env.DB.prepare(
-    `SELECT s.id, s.profile_id, s.status,
-             SUM(CASE WHEN ss.status = 'completed' AND ss.simulator_key IN ('patient_psi', 'patient_act', 'topas') THEN 1 ELSE 0 END) AS completed_sessions
-       FROM studies s
-       LEFT JOIN simulator_sessions ss ON ss.study_id = s.id
-      WHERE s.participant_code = ?
-      GROUP BY s.id, s.profile_id, s.status
-      ORDER BY s.created_at`
-  ).bind(participant.participant_code).all();
-  const profiles = assignedProfiles(env, participant);
-  const assignedIds = new Set(profiles.map(profile => profile.id));
+  await cleanupExpiredReservations(env);
+  await discardStaleUnstartedStudy(env, participant.participant_code);
+  const studies = await participantStudyRows(env, participant.participant_code);
+  const active = studies.find(study => study.status === "active") || null;
+  const profiles = studies
+    .map((study, index) => {
+      const profile = PROFILE_BY_ID.get(study.profile_id);
+      return profile ? publicProfile(profile, index + 1) : null;
+    })
+    .filter(Boolean);
+  let candidate = null;
+  if (!active) {
+    candidate = await nextAvailableProfile(env, participant);
+    if (candidate) profiles.push(publicProfile(candidate, studies.length + 1));
+  }
   return responseJson({
-    profiles: profiles.map((profile, index) => publicProfile(profile, index + 1)),
-    studies: (result.results || [])
-      .filter(row => assignedIds.has(row.profile_id))
-      .map(row => ({ ...row, completed_sessions: Number(row.completed_sessions || 0) })),
+    profiles,
+    studies,
     participant: publicParticipant(participant),
-    required_patients: profiles.length
+    required_patients: active && (active.has_started || active.completed_sessions > 0) ? 1 : 0,
+    next_patient_available: Boolean(candidate),
+    pool_exhausted: !active && !candidate
   }, 200, headers);
 }
 
@@ -555,7 +590,8 @@ async function handleStartStudy(request, env, participant, headers) {
   const body = await parseBody(request);
   const profileId = sanitizeText(body.profile_id, 32);
   if (!PROFILE_BY_ID.has(profileId)) return responseJson({ error: "Unknown case." }, 404, headers);
-  if (!profileAssigned(env, participant, profileId)) return responseJson({ error: "This case is not assigned to this expert." }, 403, headers);
+  await cleanupExpiredReservations(env);
+  await discardStaleUnstartedStudy(env, participantCode);
   const existing = await env.DB.prepare("SELECT * FROM studies WHERE participant_code = ? AND profile_id = ?")
     .bind(participantCode, profileId)
     .first();
@@ -564,6 +600,11 @@ async function handleStartStudy(request, env, participant, headers) {
     .bind(participantCode)
     .first();
   if (otherActive) return responseJson({ error: "Finish the active case before starting another." }, 409, headers);
+  const candidate = await nextAvailableProfile(env, participant);
+  if (!candidate) return responseJson({ error: "All available patients have already been claimed." }, 409, headers);
+  if (candidate.id !== profileId) {
+    return responseJson({ error: "This patient is no longer available. Return to the patient list to receive the next available patient." }, 409, headers);
+  }
 
   const studyId = crypto.randomUUID();
   const timestamp = now();
@@ -592,16 +633,17 @@ async function handleGetStudy(request, env, participant, headers) {
   const body = await parseBody(request);
   const study = await studyOwner(env, sanitizeText(body.study_id, 64), participantCode);
   if (!study) return responseJson({ error: "Study not found." }, 404, headers);
-  if (!profileAssigned(env, participant, study.profile_id)) return responseJson({ error: "Study not found." }, 404, headers);
   return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
 }
 
 async function handleStartSession(request, env, participant, headers) {
   const participantCode = participant.participant_code;
   const body = await parseBody(request);
+  await cleanupExpiredReservations(env);
   const session = await sessionOwner(env, sanitizeText(body.session_id, 64), participant);
   if (!session) return responseJson({ error: "Session not found." }, 404, headers);
   if (session.status === "active") {
+    await touchReservation(env, session.study_id);
     const study = await studyOwner(env, session.study_id, participantCode);
     return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
   }
@@ -613,6 +655,24 @@ async function handleStartSession(request, env, participant, headers) {
   ).bind(session.study_id, session.id, ...SIMULATOR_KEYS).first();
   if (blocker) return responseJson({ error: "Complete the current session and rating first." }, 409, headers);
   const timestamp = now();
+  const reservation = await env.DB.prepare(
+    "SELECT study_id, participant_code FROM patient_assignments WHERE profile_id = ?"
+  ).bind(session.profile_id).first();
+  if (reservation && reservation.study_id !== session.study_id) {
+    await env.DB.prepare("DELETE FROM studies WHERE id = ?").bind(session.study_id).run();
+    return responseJson({
+      error: "This patient was just started by another expert. Return to the patient list to receive the next available patient."
+    }, 409, headers);
+  }
+  if (!reservation) {
+    await env.DB.prepare(
+      `INSERT INTO patient_assignments
+       (profile_id, participant_code, study_id, status, reserved_at, expires_at)
+       VALUES (?, ?, ?, 'reserved', ?, ?)`
+    ).bind(session.profile_id, participantCode, session.study_id, timestamp, reservationExpiry()).run();
+  } else {
+    await touchReservation(env, session.study_id);
+  }
   await env.DB.prepare("UPDATE simulator_sessions SET status = 'active', started_at = COALESCE(started_at, ?) WHERE id = ? AND status = 'ready'")
     .bind(timestamp, session.id)
     .run();
@@ -626,6 +686,7 @@ async function handleMessage(request, env, participant, headers) {
   const session = await sessionOwner(env, sanitizeText(body.session_id, 64), participant);
   if (!session) return responseJson({ error: "Session not found." }, 404, headers);
   if (session.status !== "active") return responseJson({ error: "This conversation is not active." }, 409, headers);
+  await touchReservation(env, session.study_id);
   const content = sanitizeText(body.content, 4000);
   const clientMessageId = sanitizeText(body.client_message_id, 80);
   if (!content || !clientMessageId) return responseJson({ error: "A message and request ID are required." }, 400, headers);
@@ -656,6 +717,7 @@ async function handleMessage(request, env, participant, headers) {
       env.DB.prepare("UPDATE simulator_sessions SET state_json = ?, status = 'rating', ended_at = ? WHERE id = ? AND status = 'active'")
         .bind(JSON.stringify(nextState), timestamp, session.id)
     ]);
+    await claimPatient(env, session.study_id, timestamp);
     const study = await studyOwner(env, session.study_id, participantCode);
     return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
   }
@@ -688,6 +750,7 @@ async function handleMessage(request, env, participant, headers) {
       : env.DB.prepare("UPDATE simulator_sessions SET state_json = ? WHERE id = ?")
         .bind(JSON.stringify(nextState), session.id)
   ]);
+  if (termination) await claimPatient(env, session.study_id, timestamp);
   const study = await studyOwner(env, session.study_id, participantCode);
   return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
 }
@@ -702,6 +765,7 @@ async function handleEndSession(request, env, participant, headers) {
     return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
   }
   if (session.status !== "active") return responseJson({ error: "This conversation is not active." }, 409, headers);
+  await touchReservation(env, session.study_id);
   const therapistMessage = await env.DB.prepare("SELECT id FROM session_messages WHERE session_id = ? AND role = 'therapist' LIMIT 1")
     .bind(session.id).first();
   if (!therapistMessage) return responseJson({ error: "Exchange at least one message before ending the session." }, 409, headers);
@@ -712,6 +776,7 @@ async function handleEndSession(request, env, participant, headers) {
   };
   await env.DB.prepare("UPDATE simulator_sessions SET status = 'rating', state_json = ?, ended_at = ? WHERE id = ? AND status = 'active'")
     .bind(JSON.stringify(nextState), timestamp, session.id).run();
+  await claimPatient(env, session.study_id, timestamp);
   const study = await studyOwner(env, session.study_id, participantCode);
   return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
 }
@@ -727,6 +792,10 @@ async function handleRating(request, env, participant, headers) {
     return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
   }
   if (session.status !== "rating") return responseJson({ error: "End the session before submitting its evaluation." }, 409, headers);
+  const assignment = await env.DB.prepare(
+    "SELECT status FROM patient_assignments WHERE study_id = ? AND participant_code = ?"
+  ).bind(session.study_id, participantCode).first();
+  if (!assignment) return responseJson({ error: "This patient reservation expired. Return to the patient list for another patient." }, 409, headers);
   let scores;
   try {
     scores = validateRatings(body.scores);
@@ -750,8 +819,18 @@ async function handleRating(request, env, participant, headers) {
       .bind(timestamp, session.id)
   ];
   if (next) {
+    statements.push(env.DB.prepare(
+      `UPDATE patient_assignments
+          SET status = 'claimed', claimed_at = COALESCE(claimed_at, ?), expires_at = NULL
+        WHERE study_id = ?`
+    ).bind(timestamp, session.study_id));
     statements.push(env.DB.prepare("UPDATE simulator_sessions SET status = 'ready' WHERE id = ? AND status = 'locked'").bind(next.id));
   } else {
+    statements.push(env.DB.prepare(
+      `UPDATE patient_assignments
+          SET status = 'completed', claimed_at = COALESCE(claimed_at, ?), completed_at = ?, expires_at = NULL
+        WHERE study_id = ?`
+    ).bind(timestamp, timestamp, session.study_id));
     statements.push(env.DB.prepare("UPDATE studies SET status = 'completed', completed_at = ? WHERE id = ?").bind(timestamp, session.study_id));
   }
   await env.DB.batch(statements);
