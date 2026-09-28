@@ -40,7 +40,7 @@ class RelayConfig:
                 "https://qcri-sakina-02.services.ai.azure.com/api/projects/"
                 "qcri-sakina-02/openai/v1/",
             ).strip().rstrip("/"),
-            model=os.getenv("PROVIDER_MODEL", "gpt-4.1").strip(),
+            model=os.getenv("PROVIDER_MODEL", "gpt-5.1").strip(),
             max_request_bytes=int(os.getenv("RELAY_MAX_REQUEST_BYTES", str(2 * 1024 * 1024))),
             max_output_tokens=int(os.getenv("RELAY_MAX_OUTPUT_TOKENS", "4000")),
             timeout_seconds=float(os.getenv("RELAY_TIMEOUT_SECONDS", "180")),

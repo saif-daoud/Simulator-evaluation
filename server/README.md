@@ -6,7 +6,7 @@ processes, environment variables, database, or deployment dependency on any othe
 The service exposes only:
 
 - `GET /api/health`
-- `POST /api/responses` (authenticated server-to-server GPT-4.1 model relay)
+- `POST /api/responses` (authenticated server-to-server GPT-5.1 model relay)
 
 Study authentication, transcripts, and ratings remain in the simulator website's Cloudflare Worker and Durable Object.
 
@@ -44,7 +44,7 @@ curl --fail http://127.0.0.1:8002/simulator-evaluation-relay/api/health
 ```
 
 The second response must be the existing website's health response; the third must be this relay with
-`"configured":true` and `"model":"gpt-4.1"`.
+`"configured":true` and `"model":"gpt-5.1"`.
 
 There is a brief one-time interruption while replacing only the old ngrok process. Find that exact process with
 `ps -ef | grep '[n]grok'`, stop its PID, and immediately start the shared tunnel:

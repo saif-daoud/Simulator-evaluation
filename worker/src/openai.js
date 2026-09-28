@@ -97,7 +97,7 @@ export async function structuredResponse(env, {
   const key = apiKey(env);
   if (!key) throw new Error("The model gateway credential is not configured");
 
-  const model = env.OPENAI_MODEL || "gpt-4.1";
+  const model = env.OPENAI_MODEL || "gpt-5.1";
   const options = modelOptions(model);
   const response = await fetch(responsesUrl(env), {
     method: "POST",
@@ -153,7 +153,7 @@ export async function textResponse(env, {
   const key = apiKey(env);
   if (!key) throw new Error("The model gateway credential is not configured");
 
-  const model = env.OPENAI_MODEL || "gpt-4.1";
+  const model = env.OPENAI_MODEL || "gpt-5.1";
   const options = modelOptions(model);
   const response = await fetch(responsesUrl(env), {
     method: "POST",

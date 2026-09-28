@@ -18,7 +18,7 @@ Cloudflare Worker (authentication + study API + simulator orchestration)
        |
        +-- authenticated server-to-server relay on the QCRI API
        |        |
-       |        +-- GPT-4.1 Responses API from the permitted QCRI network
+       |        +-- GPT-5.1 Responses API from the permitted QCRI network
        +-- isolated SQLite-backed Durable Object (sessions, messages, ratings)
 ```
 
@@ -75,7 +75,7 @@ The checked-in `frontend/config.js` points local hosts at `http://127.0.0.1:8787
 
 The included GitHub Actions workflows test and deploy the Worker and publish `frontend/` to GitHub Pages when `main` is pushed. They use encrypted repository secrets for Cloudflare, the relay token, the per-expert access-code map, and token signing.
 
-The QCRI API relay calls the same project endpoint and `/chat/completions` route configured in `new_simulations/`. It allowlists and converts the Worker's GPT-4.1 requests, never forwards a storage request, limits request/output sizes, and authenticates the Worker with a separate random bearer token.
+The QCRI API relay calls the same project endpoint and `/chat/completions` route configured in `new_simulations/`. It allowlists and converts the Worker's GPT-5.1 requests, never forwards a storage request, limits request/output sizes, and authenticates the Worker with a separate random bearer token.
 
 ## Study behavior
 
@@ -87,7 +87,7 @@ The QCRI API relay calls the same project endpoint and `/chat/completions` route
 - A session moves to evaluation after 50 therapist-patient turns, when the expert ends it, or when either speaker gives a direct bye/goodbye farewell.
 - The expert proceeds to the next session only after all five ratings are submitted.
 - Scores use a 1–5 anchored scale; comments are optional.
-- TOPAS builds a populated case profile deterministically, updates all 14 categorical dynamic-state dimensions before each reply, and then generates the patient utterance in a separate GPT-4.1 request.
+- TOPAS builds a populated case profile deterministically, updates all 14 categorical dynamic-state dimensions before each reply, and then generates the patient utterance in a separate GPT-5.1 request.
 
 ## Verification
 

@@ -9,3 +9,4 @@ server/logs/
 server/__pycache__/
 server/tests/__pycache__/
 server/.pytest_cache/
+simulator-evaluation-server/
