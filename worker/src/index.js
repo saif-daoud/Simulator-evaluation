@@ -10,7 +10,6 @@ const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const RESERVATION_TTL_MS = 24 * 60 * 60 * 1000;
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
 const PROFILE_BY_ID = new Map(PROFILES.map(profile => [profile.id, profile]));
-const INTERNAL_AUDIT_KEY_DIGEST = "5c4d1eb50c170ff79700edd5242b9ecb005b20bbb6b1d3ae32df83024b33c5f7";
 const SPEAKER_PREFIX = /^\s*(?:(?:therapist|patient|client|persuader|persuadee)\s*:\s*)+/i;
 const FAREWELL = /(?<![\w])(?:good(?:[\s-]+)?bye|bye(?:[\s-]+bye)?)(?![\w])/giu;
 
@@ -839,35 +838,6 @@ async function handleRating(request, env, participant, headers) {
   return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
 }
 
-async function handleInternalStudyAudit(request, env, headers) {
-  const supplied = String(request.headers.get("X-Study-Audit-Key") || "");
-  const suppliedDigest = [...await digest(supplied)]
-    .map(value => value.toString(16).padStart(2, "0"))
-    .join("");
-  if (!supplied || suppliedDigest !== INTERNAL_AUDIT_KEY_DIGEST) {
-    return responseJson({ error: "Not authorized." }, 403, headers);
-  }
-  const result = await env.DB.prepare(
-    `SELECT p.participant_code, s.id AS study_id, s.profile_id, s.status AS study_status,
-            s.created_at, s.completed_at, pa.status AS assignment_status,
-            ss.display_order, ss.simulator_key, ss.status AS session_status,
-            ss.started_at, ss.ended_at, ss.completed_at AS session_completed_at,
-            COUNT(DISTINCT sm.id) AS message_count,
-            COUNT(DISTINCT sr.id) AS rating_count
-       FROM participants p
-       JOIN studies s ON s.participant_code = p.participant_code
-       LEFT JOIN patient_assignments pa ON pa.study_id = s.id
-       JOIN simulator_sessions ss ON ss.study_id = s.id
-       LEFT JOIN session_messages sm ON sm.session_id = ss.id
-       LEFT JOIN simulator_ratings sr ON sr.session_id = ss.id
-      GROUP BY p.participant_code, s.id, s.profile_id, s.status, s.created_at, s.completed_at,
-               pa.status, ss.display_order, ss.simulator_key, ss.status,
-               ss.started_at, ss.ended_at, ss.completed_at
-      ORDER BY p.participant_code, s.created_at, ss.display_order`
-  ).all();
-  return responseJson({ rows: result.results || [] }, 200, headers);
-}
-
 async function router(request, env) {
   const origin = request.headers.get("Origin") || "";
   const headers = corsHeaders(env, origin);
@@ -891,7 +861,6 @@ async function router(request, env) {
   }
   if (!originAllowed(env, origin)) return responseJson({ error: "Origin not allowed." }, 403);
   if (request.method !== "POST") return responseJson({ error: "Method not allowed." }, 405, headers);
-  if (path === "/api/internal/study-audit") return handleInternalStudyAudit(request, env, headers);
   if (path === "/api/auth/login") return handleLogin(request, env, headers);
 
   let authentication;
