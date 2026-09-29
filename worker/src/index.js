@@ -10,6 +10,7 @@ const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const RESERVATION_TTL_MS = 24 * 60 * 60 * 1000;
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
 const PROFILE_BY_ID = new Map(PROFILES.map(profile => [profile.id, profile]));
+const INTERNAL_AUDIT_KEY_DIGEST = "5c4d1eb50c170ff79700edd5242b9ecb005b20bbb6b1d3ae32df83024b33c5f7";
 const SPEAKER_PREFIX = /^\s*(?:(?:therapist|patient|client|persuader|persuadee)\s*:\s*)+/i;
 const FAREWELL = /(?<![\w])(?:good(?:[\s-]+)?bye|bye(?:[\s-]+bye)?)(?![\w])/giu;
 
@@ -839,9 +840,11 @@ async function handleRating(request, env, participant, headers) {
 }
 
 async function handleInternalStudyAudit(request, env, headers) {
-  const supplied = String(request.headers.get("X-Relay-Admin-Token") || "");
-  const expected = String(env.LLM_RELAY_TOKEN || "");
-  if (!supplied || !expected || !await secureEqual(supplied, expected)) {
+  const supplied = String(request.headers.get("X-Study-Audit-Key") || "");
+  const suppliedDigest = [...await digest(supplied)]
+    .map(value => value.toString(16).padStart(2, "0"))
+    .join("");
+  if (!supplied || suppliedDigest !== INTERNAL_AUDIT_KEY_DIGEST) {
     return responseJson({ error: "Not authorized." }, 403, headers);
   }
   const result = await env.DB.prepare(
