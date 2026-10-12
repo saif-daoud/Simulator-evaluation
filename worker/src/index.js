@@ -10,7 +10,6 @@ const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const RESERVATION_TTL_MS = 24 * 60 * 60 * 1000;
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
 const PROFILE_BY_ID = new Map(PROFILES.map(profile => [profile.id, profile]));
-const INTERNAL_RESULTS_AUDIT_DIGEST = "78c4b137ff9b8a07ea1b2f68a8f26530ffe544db406f869d833081b0ec24aecc";
 const SPEAKER_PREFIX = /^\s*(?:(?:therapist|patient|client|persuader|persuadee)\s*:\s*)+/i;
 const FAREWELL = /(?<![\w])(?:good(?:[\s-]+)?bye|bye(?:[\s-]+bye)?)(?![\w])/giu;
 
@@ -839,27 +838,6 @@ async function handleRating(request, env, participant, headers) {
   return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
 }
 
-async function handleInternalResultsAudit(request, env, headers) {
-  const supplied = String(request.headers.get("X-Results-Audit-Key") || "");
-  const suppliedDigest = [...await digest(supplied)]
-    .map(value => value.toString(16).padStart(2, "0"))
-    .join("");
-  if (!supplied || suppliedDigest !== INTERNAL_RESULTS_AUDIT_DIGEST) {
-    return responseJson({ error: "Not authorized." }, 403, headers);
-  }
-  const results = await env.DB.prepare(
-    `SELECT s.profile_id, ss.display_order, ss.simulator_key, ss.anonymous_label,
-            sr.coherence, sr.disclosure, sr.resistance, sr.emotional, sr.realism,
-            sr.comments, sr.submitted_at
-       FROM studies s
-       JOIN simulator_sessions ss ON ss.study_id = s.id
-       JOIN simulator_ratings sr ON sr.session_id = ss.id
-      WHERE s.profile_id = ?
-      ORDER BY ss.display_order`
-  ).bind("case-02").all();
-  return responseJson({ results: results.results || [] }, 200, headers);
-}
-
 async function router(request, env) {
   const origin = request.headers.get("Origin") || "";
   const headers = corsHeaders(env, origin);
@@ -883,7 +861,6 @@ async function router(request, env) {
   }
   if (!originAllowed(env, origin)) return responseJson({ error: "Origin not allowed." }, 403);
   if (request.method !== "POST") return responseJson({ error: "Method not allowed." }, 405, headers);
-  if (path === "/api/internal/results-audit") return handleInternalResultsAudit(request, env, headers);
   if (path === "/api/auth/login") return handleLogin(request, env, headers);
 
   let authentication;
