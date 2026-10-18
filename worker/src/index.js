@@ -10,7 +10,6 @@ const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const RESERVATION_TTL_MS = 24 * 60 * 60 * 1000;
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
 const PROFILE_BY_ID = new Map(PROFILES.map(profile => [profile.id, profile]));
-const INTERNAL_COMPLETED_EXPERTS_AUDIT_DIGEST = "ed2979a62943fc82af1333ab4580b6e924b8fb034593d2282515cb5aac17a97f";
 const SPEAKER_PREFIX = /^\s*(?:(?:therapist|patient|client|persuader|persuadee)\s*:\s*)+/i;
 const FAREWELL = /(?<![\w])(?:good(?:[\s-]+)?bye|bye(?:[\s-]+bye)?)(?![\w])/giu;
 
@@ -839,28 +838,6 @@ async function handleRating(request, env, participant, headers) {
   return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
 }
 
-async function handleInternalCompletedExpertsAudit(request, env, headers) {
-  const supplied = String(request.headers.get("X-Completed-Experts-Audit-Key") || "");
-  const suppliedDigest = [...await digest(supplied)]
-    .map(value => value.toString(16).padStart(2, "0"))
-    .join("");
-  if (!supplied || suppliedDigest !== INTERNAL_COMPLETED_EXPERTS_AUDIT_DIGEST) {
-    return responseJson({ error: "Not authorized." }, 403, headers);
-  }
-  const experts = await env.DB.prepare(
-    `SELECT p.participant_code, p.name, p.email, p.role, p.institution,
-            COUNT(DISTINCT s.id) AS completed_patient_count,
-            GROUP_CONCAT(DISTINCT s.profile_id) AS completed_profile_ids,
-            MAX(s.completed_at) AS latest_completion_at
-       FROM participants p
-       JOIN studies s ON s.participant_code = p.participant_code
-      WHERE s.status = 'completed'
-      GROUP BY p.participant_code, p.name, p.email, p.role, p.institution
-      ORDER BY MIN(s.completed_at)`
-  ).all();
-  return responseJson({ experts: experts.results || [] }, 200, headers);
-}
-
 async function router(request, env) {
   const origin = request.headers.get("Origin") || "";
   const headers = corsHeaders(env, origin);
@@ -884,7 +861,6 @@ async function router(request, env) {
   }
   if (!originAllowed(env, origin)) return responseJson({ error: "Origin not allowed." }, 403);
   if (request.method !== "POST") return responseJson({ error: "Method not allowed." }, 405, headers);
-  if (path === "/api/internal/completed-experts-audit") return handleInternalCompletedExpertsAudit(request, env, headers);
   if (path === "/api/auth/login") return handleLogin(request, env, headers);
 
   let authentication;
