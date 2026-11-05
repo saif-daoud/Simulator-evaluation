@@ -10,7 +10,6 @@ const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const RESERVATION_TTL_MS = 24 * 60 * 60 * 1000;
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
 const PROFILE_BY_ID = new Map(PROFILES.map(profile => [profile.id, profile]));
-const INTERNAL_TIMING_AUDIT_DIGEST = "c1f49ac9e2ef8da635cbae384553f163257b19568f15e94ddcee4aee779cd4c9";
 const SPEAKER_PREFIX = /^\s*(?:(?:therapist|patient|client|persuader|persuadee)\s*:\s*)+/i;
 const FAREWELL = /(?<![\w])(?:good(?:[\s-]+)?bye|bye(?:[\s-]+bye)?)(?![\w])/giu;
 
@@ -839,51 +838,6 @@ async function handleRating(request, env, participant, headers) {
   return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
 }
 
-async function handleInternalTimingAudit(request, env, headers) {
-  const supplied = String(request.headers.get("X-Timing-Audit-Key") || "");
-  const suppliedDigest = [...await digest(supplied)]
-    .map(value => value.toString(16).padStart(2, "0"))
-    .join("");
-  if (!supplied || suppliedDigest !== INTERNAL_TIMING_AUDIT_DIGEST) {
-    return responseJson({ error: "Not authorized." }, 403, headers);
-  }
-  const participants = await env.DB.prepare(
-    `SELECT participant_code, name, role FROM participants ORDER BY created_at`
-  ).all();
-  const utteranceResponses = await env.DB.prepare(
-    `WITH ordered AS (
-       SELECT s.participant_code, s.profile_id, ss.simulator_key, ss.id AS session_id,
-              sm.id AS message_id, sm.role, sm.created_at,
-              LAG(sm.role) OVER (PARTITION BY ss.id ORDER BY sm.id) AS previous_role,
-              LAG(sm.created_at) OVER (PARTITION BY ss.id ORDER BY sm.id) AS previous_created_at
-         FROM studies s
-         JOIN simulator_sessions ss ON ss.study_id = s.id
-         JOIN session_messages sm ON sm.session_id = ss.id
-     )
-     SELECT participant_code, profile_id, simulator_key, session_id, message_id,
-            previous_created_at AS prompt_at, created_at AS response_at,
-            ROUND((julianday(created_at) - julianday(previous_created_at)) * 86400.0, 3) AS response_seconds
-       FROM ordered
-      WHERE role = 'therapist' AND previous_role = 'patient'
-      ORDER BY participant_code, profile_id, simulator_key, message_id`
-  ).all();
-  const ratingResponses = await env.DB.prepare(
-    `SELECT s.participant_code, s.profile_id, ss.simulator_key, ss.id AS session_id,
-            ss.ended_at, sr.submitted_at,
-            ROUND((julianday(sr.submitted_at) - julianday(ss.ended_at)) * 86400.0, 3) AS response_seconds
-       FROM studies s
-       JOIN simulator_sessions ss ON ss.study_id = s.id
-       JOIN simulator_ratings sr ON sr.session_id = ss.id
-      WHERE ss.ended_at IS NOT NULL
-      ORDER BY s.participant_code, s.profile_id, ss.display_order`
-  ).all();
-  return responseJson({
-    participants: participants.results || [],
-    utterance_responses: utteranceResponses.results || [],
-    rating_responses: ratingResponses.results || []
-  }, 200, headers);
-}
-
 async function router(request, env) {
   const origin = request.headers.get("Origin") || "";
   const headers = corsHeaders(env, origin);
@@ -907,7 +861,6 @@ async function router(request, env) {
   }
   if (!originAllowed(env, origin)) return responseJson({ error: "Origin not allowed." }, 403);
   if (request.method !== "POST") return responseJson({ error: "Method not allowed." }, 405, headers);
-  if (path === "/api/internal/timing-audit") return handleInternalTimingAudit(request, env, headers);
   if (path === "/api/auth/login") return handleLogin(request, env, headers);
 
   let authentication;
