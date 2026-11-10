@@ -10,7 +10,6 @@ const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const RESERVATION_TTL_MS = 24 * 60 * 60 * 1000;
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
 const PROFILE_BY_ID = new Map(PROFILES.map(profile => [profile.id, profile]));
-const INTERNAL_EXPERT_EXPORT_DIGEST = "c4e962b20ed2301bc8c8e384796ab864017882d5b9209e63c353c8670d4b8bc1";
 const SPEAKER_PREFIX = /^\s*(?:(?:therapist|patient|client|persuader|persuadee)\s*:\s*)+/i;
 const FAREWELL = /(?<![\w])(?:good(?:[\s-]+)?bye|bye(?:[\s-]+bye)?)(?![\w])/giu;
 
@@ -839,34 +838,6 @@ async function handleRating(request, env, participant, headers) {
   return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
 }
 
-async function handleInternalExpertExport(request, env, headers) {
-  const supplied = String(request.headers.get("X-Expert-Export-Key") || "");
-  const suppliedDigest = [...await digest(supplied)]
-    .map(value => value.toString(16).padStart(2, "0"))
-    .join("");
-  if (!supplied || suppliedDigest !== INTERNAL_EXPERT_EXPORT_DIGEST) {
-    return responseJson({ error: "Not authorized." }, 403, headers);
-  }
-  const experts = await env.DB.prepare(
-    `SELECT p.participant_code, p.email, p.cohort_code,
-            p.assignment_start, p.assignment_end,
-            p.name, p.role, p.institution, p.latest_degree,
-            p.years_experience, p.profile_completed,
-            p.created_at, p.last_seen_at,
-            COUNT(DISTINCT CASE WHEN s.status = 'completed' THEN s.id END) AS completed_patient_count,
-            COUNT(DISTINCT CASE WHEN s.status = 'active' THEN s.id END) AS active_study_count
-       FROM participants p
-       LEFT JOIN studies s ON s.participant_code = p.participant_code
-      GROUP BY p.participant_code, p.email, p.cohort_code,
-               p.assignment_start, p.assignment_end,
-               p.name, p.role, p.institution, p.latest_degree,
-               p.years_experience, p.profile_completed,
-               p.created_at, p.last_seen_at
-      ORDER BY p.created_at`
-  ).all();
-  return responseJson({ experts: experts.results || [] }, 200, headers);
-}
-
 async function router(request, env) {
   const origin = request.headers.get("Origin") || "";
   const headers = corsHeaders(env, origin);
@@ -890,7 +861,6 @@ async function router(request, env) {
   }
   if (!originAllowed(env, origin)) return responseJson({ error: "Origin not allowed." }, 403);
   if (request.method !== "POST") return responseJson({ error: "Method not allowed." }, 405, headers);
-  if (path === "/api/internal/expert-export") return handleInternalExpertExport(request, env, headers);
   if (path === "/api/auth/login") return handleLogin(request, env, headers);
 
   let authentication;
