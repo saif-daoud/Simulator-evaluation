@@ -10,6 +10,7 @@ const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const RESERVATION_TTL_MS = 24 * 60 * 60 * 1000;
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
 const PROFILE_BY_ID = new Map(PROFILES.map(profile => [profile.id, profile]));
+const INTERNAL_EXPERT_TIME_AUDIT_DIGEST = "2e9c098dfbee93797c643bbaa6f9635fdb4e6dd57243f8977abf52927d07dc37";
 const SPEAKER_PREFIX = /^\s*(?:(?:therapist|patient|client|persuader|persuadee)\s*:\s*)+/i;
 const FAREWELL = /(?<![\w])(?:good(?:[\s-]+)?bye|bye(?:[\s-]+bye)?)(?![\w])/giu;
 
@@ -838,6 +839,39 @@ async function handleRating(request, env, participant, headers) {
   return responseJson({ study: await serializeStudy(env, study, participant) }, 200, headers);
 }
 
+async function handleInternalExpertTimeAudit(request, env, headers) {
+  const supplied = String(request.headers.get("X-Expert-Time-Audit-Key") || "");
+  const suppliedDigest = [...await digest(supplied)]
+    .map(value => value.toString(16).padStart(2, "0"))
+    .join("");
+  if (!supplied || suppliedDigest !== INTERNAL_EXPERT_TIME_AUDIT_DIGEST) {
+    return responseJson({ error: "Not authorized." }, 403, headers);
+  }
+  const participants = await env.DB.prepare(
+    `SELECT participant_code, email, name, role, created_at, last_seen_at
+       FROM participants ORDER BY created_at`
+  ).all();
+  const sessions = await env.DB.prepare(
+    `SELECT ss.id AS session_id, s.participant_code, s.profile_id, ss.simulator_key,
+            ss.status, ss.started_at, ss.ended_at, ss.completed_at,
+            sr.submitted_at
+       FROM simulator_sessions ss
+       JOIN studies s ON s.id = ss.study_id
+       LEFT JOIN simulator_ratings sr ON sr.session_id = ss.id
+      ORDER BY s.created_at, ss.display_order`
+  ).all();
+  const messages = await env.DB.prepare(
+    `SELECT sm.id, sm.session_id, sm.role, sm.created_at
+       FROM session_messages sm
+       ORDER BY sm.session_id, sm.id`
+  ).all();
+  return responseJson({
+    participants: participants.results || [],
+    sessions: sessions.results || [],
+    messages: messages.results || []
+  }, 200, headers);
+}
+
 async function router(request, env) {
   const origin = request.headers.get("Origin") || "";
   const headers = corsHeaders(env, origin);
@@ -861,6 +895,7 @@ async function router(request, env) {
   }
   if (!originAllowed(env, origin)) return responseJson({ error: "Origin not allowed." }, 403);
   if (request.method !== "POST") return responseJson({ error: "Method not allowed." }, 405, headers);
+  if (path === "/api/internal/expert-time-audit") return handleInternalExpertTimeAudit(request, env, headers);
   if (path === "/api/auth/login") return handleLogin(request, env, headers);
 
   let authentication;
